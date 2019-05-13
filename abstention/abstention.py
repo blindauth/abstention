@@ -223,6 +223,7 @@ class NegPosteriorDistanceFromThreshold(AbstainerFactory):
             return -np.abs(posterior_probs-threshold) 
         return abstaining_func
 
+
 #Based on
 # Fumera, Giorgio, Fabio Roli, and Giorgio Giacinto.
 # "Reject option with multiple thresholds."
@@ -1021,4 +1022,599 @@ def find_best_mixing_coef(evaluation_func, scores1, scores2, stepsize):
             best_objective = objective 
             best_a = a
     return best_a
+
+
+def get_sorted_probs_and_indices(posterior_probs):
+    sorted_idx_and_probs = sorted(enumerate(posterior_probs),
+                                      key=lambda x: x[1])
+    indices = [x[0] for x in sorted_idx_and_probs]
+    sorted_probs = np.array([x[1] for x in sorted_idx_and_probs])
+    return (sorted_probs, indices)
+  
+
+def reorder_scores(unreordered_scores, indices):
+    to_return = np.zeros(len(unreordered_scores))
+    to_return[indices] = unreordered_scores
+    return to_return
+          
+          
+def pad_windowed_scores(signal, return_max_across_windows, window_size):
+
+    if (return_max_across_windows):
+        #return the maximum score across all windows that a particular
+        # index falls in
+        padded = np.array([-np.inf for i in range(window_size-1)]+
+                          list(signal)
+                          +[-np.inf for i in range(window_size-1)])
+        rolling = np.lib.stride_tricks.as_strided(
+            padded, shape=(len(signal)+(window_size-1),
+                           window_size),
+            strides=padded.strides + (padded.strides[-1],))
+        return np.max(rolling,axis=-1)
+    else:
+        #return score when a window *centered* at a particular index
+        # is abstained on
+        left_pad = int((window_size-1)/2.0)
+        right_pad = (window_size-1) - int((window_size-1)/2.0)
+        return np.array([signal[0] for i in range(left_pad)]
+                        + list(signal)
+                        + [signal[-1] for i in range(right_pad)])
+
+
+class MonteCarloSampler(AbstainerFactory):
+    
+    def __init__(self, n_samples, smoothing_window_size,
+                       return_max_across_windows=True,
+                       polyorder=1, seed=1):
+        self.rng = np.random.RandomState(seed)
+        self.n_samples = n_samples
+        self.smoothing_window_size = smoothing_window_size
+        self.polyorder = polyorder
+        
+    def sample(self, sorted_probs):
+        true_labels = 1.0*(self.rng.rand(*sorted_probs.shape)
+                           < sorted_probs)
+        pos_cumsum = np.array([0]+list(np.cumsum(true_labels)))
+        neg_cumsum = np.array([0]+list(np.cumsum(1-true_labels))) 
+        return true_labels, pos_cumsum, neg_cumsum
+   
+    def postprocess_total_scores_marginalabst(self, total_scores, indices):
+        mean_scores = total_scores/self.n_samples
+        smoothed_mean_scores =\
+            self.smooth_signal(signal=mean_scores)
+        return reorder_scores(unreordered_scores=smoothed_mean_scores,
+                              indices=indices)
+    
+    def smooth_signal(self, signal):
+        if (self.smoothing_window_size is not None):
+            return scipy.signal.savgol_filter(
+                signal, window_length=self.smoothing_window_size,
+                polyorder=self.polyorder, mode='nearest')
+        else:
+            return signal
+      
+
+class MonteCarloSamplerWindowAbst(MonteCarloSampler):  
+     
+    def __init__(self, num_to_abstain_on,
+                       return_max_across_windows, **kwargs):
+        self.num_to_abstain_on = num_to_abstain_on
+        self.return_max_across_windows = return_max_across_windows
+        super(MonteCarloSamplerWindowAbst, self).__init__(**kwargs)        
+    
+    def postprocess_total_scores_windowabst(self, total_scores, indices):
+        mean_scores = total_scores/self.n_samples
+        #total_scores has length of len(indices)+1-window_size
+        #represents score when a window beginning at that index is abstained on
+        window_size = self.num_to_abstain_on
+        assert len(mean_scores) == (len(indices) + 1 - window_size)
+        smoothed_scores = self.smooth_signal(signal=mean_scores)
+        unreordered_scores = None   
+        unreordered_scores = pad_windowed_scores(
+            signal=smoothed_scores,
+            return_max_across_windows=self.return_max_across_windows,
+            window_size=window_size)
+        return reorder_scores(unreordered_scores=unreordered_scores,
+                              indices=indices)
+
+
+class MonteCarloMarginalDeltaAuRoc(MonteCarloSampler):
+
+    def __init__(self, n_samples, smoothing_window_size, **kwargs):
+        super(MonteCarloMarginalDeltaAuRoc, self).__init__(
+            n_samples=n_samples, smoothing_window_size=smoothing_window_size,
+            **kwargs)
+
+    def __call__(self, **kwargs):
+
+        def abstaining_func(posterior_probs,
+                            uncertainties=None,
+                            embeddings=None):
+            (sorted_probs, indices) = get_sorted_probs_and_indices(
+                                        posterior_probs=posterior_probs)
+            tot_auroc_deltas = np.zeros(len(sorted_probs))
+
+            for sample_num in range(self.n_samples):
+                labels, pos_cumsum, neg_cumsum = self.sample(
+                    sorted_probs=sorted_probs) 
+                
+                tot_neg = neg_cumsum[-1]
+                tot_pos = pos_cumsum[-1]
+
+                frac_neg_lt = neg_cumsum/tot_neg  
+                frac_pos_gte = (tot_pos-pos_cumsum)/tot_pos
+                
+                tot_fracneglt_positives = np.sum(
+                    frac_neg_lt[:-1][labels==1.0])
+                tot_fracposgt_negatives = np.sum(
+                    frac_pos_gte[:-1][labels==0.0])
+                
+                delta_aurocs = np.zeros(len(labels)) 
+                delta_aurocs[labels==1.0] =(
+                    (tot_fracneglt_positives - frac_neg_lt[:-1][labels==1.0])/
+                    (tot_pos-1)) - (tot_fracneglt_positives/tot_pos)
+                delta_aurocs[labels==0.0] =(
+                    (tot_fracposgt_negatives - frac_pos_gte[:-1][labels==0.0])/
+                    (tot_neg-1)) - (tot_fracposgt_negatives/tot_neg)
+
+                tot_auroc_deltas += delta_aurocs
+            
+            return self.postprocess_total_scores_marginalabst(
+                total_scores=tot_auroc_deltas, indices=indices)
+
+        return abstaining_func
+      
+ 
+class MonteCarloWindowAbstDeltaTprAtFprThreshold(MonteCarloSamplerWindowAbst):
+
+    def __init__(self, n_samples, fpr_threshold, num_to_abstain_on,
+                       return_max_across_windows,
+                       smoothing_window_size, **kwargs):
+        self.fpr_threshold = fpr_threshold
+        super(MonteCarloWindowAbstDeltaTprAtFprThreshold, self).__init__(
+            n_samples=n_samples, smoothing_window_size=smoothing_window_size,
+            num_to_abstain_on=num_to_abstain_on,
+            return_max_across_windows=return_max_across_windows,
+            **kwargs)
+    
+    def __call__(self, **kwargs):
+      
+        def abstaining_func(posterior_probs, uncertainties=None,
+                            embeddings=None):
+            (sorted_probs, indices) = get_sorted_probs_and_indices(
+                            posterior_probs=posterior_probs)
+            window_size = self.num_to_abstain_on
+            tot_tpr_deltas = np.zeros((len(sorted_probs)+1)-window_size)
+            
+            window_start_idx = np.arange((len(sorted_probs)+1)-window_size)
+            window_end_idx = window_start_idx+window_size
+            
+            for sample_num in range(self.n_samples):
+                labels, pos_cumsum, neg_cumsum = self.sample(
+                    sorted_probs=sorted_probs)
+                #identify the point of target tpr, with and without abstention 
+                totpos = float(pos_cumsum[-1])
+                totneg = float(neg_cumsum[-1])
+                
+                numneg_above = totneg - neg_cumsum
+                numpos_above = totpos - pos_cumsum
+                
+                #when negatives to the right are abstained on, the
+                # fpr gets better (i.e. decreases)
+                #Figure out num of negatives to the right that need to
+                # be evicted before given threshold dips below the target fpr
+                negtoright_eviction_needed = np.ceil(
+                    np.maximum(numneg_above - self.fpr_threshold*totneg,0)/(
+                    1 - self.fpr_threshold)).astype(int)  
+                
+                #find the earliest index threshold that satisfies the fpr
+                # requirement in the case of no eviction
+                noevict_thresh = next(x[0]
+                 for x in enumerate(negtoright_eviction_needed)
+                 if x[1]==0)
+                
+                
+                #iterate down to find the new threshold when a given num to
+                # the right are evicted
+                thresh_with_negrightevic = np.full(window_size+1, np.nan)
+                curr_thresh = noevict_thresh
+                for negrightevic in range(window_size+1):
+                    #decrement the threshold has far as possible while
+                    # still satisfying the fpr constraint
+                    while (curr_thresh > 0 and
+                           negtoright_eviction_needed[curr_thresh-1]
+                           <= negrightevic):
+                        curr_thresh = curr_thresh - 1
+                    thresh_with_negrightevic[negrightevic] = curr_thresh
+                assert thresh_with_negrightevic[0] == noevict_thresh
+                
+                #When negatives to the left are abstained on, fpr gets
+                # worse (i.e. increases)
+                #Figure out num of negatives to the left that could be
+                # evicted while still allowing the given threshold to
+                # satisfy the target fpr
+                negtoleft_eviction_tolerable = np.floor(
+                  np.maximum(self.fpr_threshold*totneg - numneg_above,0)/(
+                  self.fpr_threshold)).astype(int)
+                #iterate upwards to find the new threshold when a given num to
+                # the left are evicted
+                thresh_with_negleftevic = np.full(window_size+1, np.nan)
+                curr_thresh = noevict_thresh
+                for negleftevic in range(window_size+1):
+                    #increment the threshold as needed until we satisfy
+                    # the fpr constraint
+                    while (curr_thresh < len(sorted_probs) and
+                           negtoleft_eviction_tolerable[curr_thresh]
+                           < negleftevic):
+                        curr_thresh = curr_thresh + 1
+                    thresh_with_negleftevic[negleftevic] = curr_thresh
+                assert thresh_with_negleftevic[0] == noevict_thresh
+
+                #compute the number of positives and negatives in each window
+                npos_in_window = (pos_cumsum[window_size:] -
+                                  pos_cumsum[:-window_size]).astype("int")
+                nneg_in_window = window_size-npos_in_window
+                
+                #Figure out the threshold for each abstention window, based
+                # on the number of negatives abstained on
+                candidate_windowtoright_thresh =\
+                  thresh_with_negrightevic[nneg_in_window]
+                candidate_windowtoleft_thresh =\
+                  thresh_with_negleftevic[nneg_in_window]
+                
+                thresh_after_window_abst = (
+                   ((candidate_windowtoright_thresh <= window_start_idx)*
+                     candidate_windowtoright_thresh)
+                  +((candidate_windowtoright_thresh > window_start_idx)*
+                     np.maximum(candidate_windowtoleft_thresh,
+                                window_end_idx))).astype("int")
+                tpr_after_window_abst = (
+                  (numpos_above[thresh_after_window_abst]-
+                   npos_in_window*(thresh_after_window_abst <= window_start_idx)
+                  )/(totpos - npos_in_window))
+                
+                #print(set(tpr_after_window_abst))
+                tot_tpr_deltas += tpr_after_window_abst - (
+                                     numpos_above[noevict_thresh]/totpos)
+                
+            return self.postprocess_total_scores_windowabst(
+                total_scores=tot_tpr_deltas, indices=indices)
+        
+        return abstaining_func
+      
+      
+class MonteCarloMarginalDeltaTprAtFprThreshold(MonteCarloSampler):
+
+    def __init__(self, n_samples, fpr_threshold,
+                       smoothing_window_size, **kwargs):
+        self.fpr_threshold = fpr_threshold
+        super(MonteCarloMarginalDeltaTprAtFprThreshold, self).__init__(
+            n_samples=n_samples, smoothing_window_size=smoothing_window_size,
+            **kwargs)
+
+    def __call__(self, **kwargs):
+
+        def abstaining_func(posterior_probs,
+                            uncertainties=None,
+                            embeddings=None):
+            (sorted_probs, indices) = get_sorted_probs_and_indices(
+                            posterior_probs=posterior_probs)
+
+            tr_vec = np.arange((len(sorted_probs)+1))
+            tot_tpr_deltas = np.zeros(len(sorted_probs))
+
+            for sample_num in range(self.n_samples):
+                labels, pos_cumsum, neg_cumsum = self.sample(
+                    sorted_probs=sorted_probs) 
+                #identify the point of target tpr, with and without abstention 
+                totpos = float(pos_cumsum[-1])
+                totneg = float(neg_cumsum[-1])
+                neg_above = totneg-neg_cumsum
+
+                if (totpos > 0.0 and totneg > 0.0):
+               
+                    fpr_vec = ((totneg-neg_cumsum)/totneg)
+                    fpr_negrightevict_vec = (neg_above-1.0)/(totneg-1.0) 
+                    fpr_negleftevict_vec = neg_above/(totneg-1.0)
+
+                    fpr_thresh = tr_vec[fpr_vec <= self.fpr_threshold][0]
+                    fpr_negrightevict_thresh = tr_vec[fpr_negrightevict_vec <=
+                                                   self.fpr_threshold][0] 
+                    fpr_negleftevict_thresh = tr_vec[fpr_negleftevict_vec <=
+                                                     self.fpr_threshold][0]
+                    
+                    right_of_thresh_mask = tr_vec[:-1] >= fpr_thresh
+                    left_of_thresh_mask = right_of_thresh_mask==False
+                    positives_mask = labels==1.0
+                    negatives_mask = positives_mask==False                    
+                    
+                    tpr_at_thresh = 1.0 - (pos_cumsum[fpr_thresh]/totpos)
+                    tpr_at_thresh_posrightevict =\
+                        1.0 - (pos_cumsum[fpr_thresh]/(totpos-1.0))
+                    tpr_at_thresh_posleftevict =\
+                        1.0 - ((pos_cumsum[fpr_thresh]-1.0)/(totpos-1.0)) 
+                    tpr_at_negrightevict_thresh =\
+                        1.0 - (pos_cumsum[fpr_negrightevict_thresh]/totpos)
+                    tpr_at_negleftevict_thresh =\
+                        1.0 - (pos_cumsum[fpr_negleftevict_thresh]/totpos)
+                    
+                    assert (tpr_at_thresh >= tpr_at_thresh_posrightevict)
+                    assert (tpr_at_thresh <= tpr_at_thresh_posleftevict)
+                    assert (tpr_at_negrightevict_thresh >= tpr_at_thresh)
+                    assert (tpr_at_negleftevict_thresh <= tpr_at_thresh)
+                    
+                    positives_right_of_thresh =\
+                        positives_mask*(tr_vec[:-1] >= fpr_thresh)
+                    positives_left_of_thresh =\
+                        positives_mask*(tr_vec[:-1] < fpr_thresh)
+                    negatives_right_of_thresh =\
+                        negatives_mask*(tr_vec[:-1] >= fpr_negrightevict_thresh)
+                    negatives_left_of_thresh =\
+                        negatives_mask*(tr_vec[:-1] < fpr_negrightevict_thresh)
+                    
+                    #print(tpr_at_thresh_posleftevict,
+                    #      tpr_at_thresh_posrightevict,
+                    #      tpr_at_negleftevict_thresh,
+                    #      tpr_at_negrightevict_thresh)
+                    
+                    tpr_deltas =\
+                     (
+                       (positives_left_of_thresh
+                       *(tpr_at_thresh_posleftevict - tpr_at_thresh))
+                      +(positives_right_of_thresh
+                        *(tpr_at_thresh_posrightevict - tpr_at_thresh))
+                      +(negatives_left_of_thresh*
+                        (tpr_at_negleftevict_thresh - tpr_at_thresh))
+                      +(negatives_right_of_thresh*
+                        (tpr_at_negrightevict_thresh - tpr_at_thresh))
+                     )
+                    
+                    tot_tpr_deltas += tpr_deltas     
+            
+            return self.postprocess_total_scores_marginalabst(
+                total_scores=tot_tpr_deltas, indices=indices)
+
+        return abstaining_func
+
+
+class MonteCarloWindowAbstDeltaAuroc(MonteCarloSamplerWindowAbst):
+
+    def __init__(self, n_samples, num_to_abstain_on,
+                       return_max_across_windows,
+                       smoothing_window_size, **kwargs):
+        super(MonteCarloWindowAbstDeltaAuroc, self).__init__(
+            n_samples=n_samples, smoothing_window_size=smoothing_window_size,
+            num_to_abstain_on=num_to_abstain_on,
+            return_max_across_windows=return_max_across_windows,
+            **kwargs)
+    
+    def __call__(self, **kwargs):
+      
+        def abstaining_func(posterior_probs, uncertainties=None,
+                            embeddings=None):
+            (sorted_probs, indices) = get_sorted_probs_and_indices(
+                            posterior_probs=posterior_probs)
+            window_size = self.num_to_abstain_on
+            tot_auroc_deltas = np.zeros((len(sorted_probs)+1)-window_size)       
+            window_start_idx = np.arange((len(sorted_probs)+1)-window_size)
+            window_end_idx = window_start_idx+window_size
+            
+            for sample_num in range(self.n_samples):
+                labels, pos_cumsum, neg_cumsum = self.sample(
+                    sorted_probs=sorted_probs)
+                totpos = float(pos_cumsum[-1])
+                totneg = float(neg_cumsum[-1])
+                
+                sum_negcumsum = np.sum(neg_cumsum[1:]*labels)
+                curr_auroc = sum_negcumsum/(totneg*totpos)
+                
+                #compute the number of positives and negatives in each window
+                npos_in_window = (pos_cumsum[window_size:] -
+                                  pos_cumsum[:-window_size])
+                nneg_in_window = window_size-npos_in_window
+                #also compute the sum of neg_cumsum*labels in each window
+                cumsum_negcumsum = np.array(
+                    [0]+list(np.cumsum(neg_cumsum[1:]*labels)))
+                negcumsum_in_window = (cumsum_negcumsum[window_size:] -
+                                       cumsum_negcumsum[:-window_size])
+                
+                #Figure out how sum_negcumsum will be adjusted
+                # if a given window is left out. Basically, at each positive
+                # above the window, the neg_cumsum will be reduced by the
+                # number of negatives within the window.
+                numpos_above_window = totpos - pos_cumsum[window_size:]
+                adj_sum_negcumsum = (sum_negcumsum - negcumsum_in_window -
+                 numpos_above_window*nneg_in_window)
+
+                #divide adj_sum_negcumsum by the adjusted totneg and totpos
+                # to get the new auroc
+                new_auroc = adj_sum_negcumsum/(
+                  (totpos-npos_in_window)*(totneg-nneg_in_window))
+                
+                tot_auroc_deltas += new_auroc - curr_auroc                 
+                
+            return self.postprocess_total_scores_windowabst(
+                total_scores=tot_auroc_deltas, indices=indices)
+        
+        return abstaining_func
+
+
+class EstWindowAbstDeltaAuroc(AbstainerFactory):
+
+    def __init__(self, num_to_abstain_on, return_max_across_windows):
+        self.num_to_abstain_on = num_to_abstain_on
+        self.return_max_across_windows = return_max_across_windows
+    
+    def __call__(self, **kwargs):
+      
+        def abstaining_func(posterior_probs, uncertainties=None,
+                            embeddings=None):
+            (sorted_probs, indices) = get_sorted_probs_and_indices(
+                            posterior_probs=posterior_probs)
+            
+            window_size = self.num_to_abstain_on
+            window_start_idx = np.arange((len(sorted_probs)+1)-window_size)
+            window_end_idx = window_start_idx+window_size
+            
+            est_pos_cumsum = np.array([0]+list(np.cumsum(sorted_probs)))
+            est_neg_cumsum = np.array([0]+list(np.cumsum(1-sorted_probs)))
+            est_totpos = est_pos_cumsum[-1]
+            est_totneg = est_neg_cumsum[-1]
+            
+            est_sum_negcumsum_at_pos =\
+               np.sum(est_neg_cumsum[1:]*sorted_probs)
+            est_curr_auroc = est_sum_negcumsum_at_pos/(est_totneg*est_totpos)
+            
+            #compute the estimated # of positives and negatives in each window
+            est_npos_in_window = (est_pos_cumsum[window_size:] -
+                                  est_pos_cumsum[:-window_size])
+            est_nneg_in_window = window_size-est_npos_in_window
+            
+            #also estimate the sum of neg_cumsum*labels in each window
+            cumsum_negcumsum = np.array(
+                [0]+list(np.cumsum(est_neg_cumsum[1:]*sorted_probs)))
+            negcumsum_at_pos_in_window = (cumsum_negcumsum[window_size:] -
+                                          cumsum_negcumsum[:-window_size])
+            #Figure out how sum_negcumsum will be adjusted
+            # if a given window is left out. Basically, at each positive
+            # above the window, the neg_cumsum will be reduced by the
+            # number of negatives within the window.
+            est_numpos_above_window = est_totpos - est_pos_cumsum[window_size:]
+            adj_est_sum_negcumsum_at_pos = (
+                est_sum_negcumsum_at_pos - negcumsum_at_pos_in_window -
+             est_numpos_above_window*est_nneg_in_window)
+            
+            #divide adj_sum_negcumsum by the adjusted totneg and totpos
+            # to get the new auroc
+            est_new_auroc = adj_est_sum_negcumsum_at_pos/(
+                  (est_totpos-est_npos_in_window)
+                  *(est_totneg-est_nneg_in_window))
+            est_auroc_delta = est_new_auroc - est_curr_auroc
+            
+            return reorder_scores(
+                unreordered_scores=pad_windowed_scores(
+                  signal=est_auroc_delta,
+                  return_max_across_windows=self.return_max_across_windows,
+                  window_size=window_size),
+                indices=indices)
+        return abstaining_func
+
+
+class MonteCarloMarginalDeltaRecallAtPrecisionThreshold(
+        MonteCarloSampler, AbstainerFactory):
+
+    def __init__(self, n_samples, precision_threshold,
+                       smoothing_window_size,
+                       polyorder=1, seed=1):
+        super(MonteCarloMarginalDeltaRecallAtPrecisionThreshold, self).__init__(
+            n_samples=n_samples, smoothing_window_size=smoothing_window_size,
+            polyorder=polyorder, seed=seed)
+        self.precision_threshold = precision_threshold
+
+    def __call__(self, **kwargs):
+
+        def abstaining_func(posterior_probs,
+                            uncertainties=None,
+                            embeddings=None):
+            (sorted_probs, indices) = get_sorted_probs_and_indices(
+                            posterior_probs=posterior_probs)
+
+            tr_vec = np.arange((len(sorted_probs)+1))            
+            total_above = len(sorted_probs)-tr_vec
+            total_above_rightevict = np.maximum(total_above - 1.0, 1e-7)
+            
+            tot_recall_deltas = np.zeros(len(sorted_probs))
+            
+            for sample_num in range(self.n_samples):
+                labels, pos_cumsum, neg_cumsum = self.sample(
+                    sorted_probs=sorted_probs) 
+                totpos = pos_cumsum[-1]
+                totneg = neg_cumsum[-1]
+                pos_above = totpos - pos_cumsum
+                neg_above = totneg - neg_cumsum
+                
+                if (totpos > 0.0 and totneg > 0.0):
+                    #identify the point of target precision,
+                    # with and without abstention
+                    precision_vec = pos_above/total_above
+                    recall_vec = pos_above/totpos
+                    precision_posrightevict_vec =(
+                       np.maximum(pos_above-1.0, 1e-7)/total_above_rightevict)
+                    precision_negrightevict_vec = (
+                       pos_above/total_above_rightevict)
+                    
+                    recall_posrightevict_vec = np.maximum(pos_above-1.0, 0.0)/(
+                        max(totpos - 1.0,1e-7))
+                    recall_posleftevict_vec = pos_above/(
+                        max(totpos - 1.0,1e-7))
+                    
+                    #take the earliest passing threshold
+                    precision_thresh = tr_vec[
+                     precision_vec >= self.precision_threshold][0]
+                    precision_posrightevict_thresh = tr_vec[
+                     precision_posrightevict_vec >= self.precision_threshold][0]                    
+                    precision_negrightevict_thresh = tr_vec[
+                        precision_negrightevict_vec >= self.precision_threshold
+                    ][0]
+                    
+                    assert precision_negrightevict_thresh <= precision_thresh
+                    assert precision_posrightevict_thresh >= precision_thresh
+                    
+                    #recall when different things are evicted
+                    recall_after_eviction = np.zeros(len(sorted_probs))
+                    
+                    #Abstaining on negatives can cause a shift in threshold.
+                    # precision_negrightevict_thresh is the new threshold at
+                    # which target precision is attained, assuming a negative to
+                    # the left has been abstained on. If a negative to the left
+                    # of precision_negrightevict_thresh is abstained on, there
+                    # is no shift in threshold and the new recall is the same as
+                    # the old recall.
+                    recall_after_eviction[
+                        (labels==0.0)*(tr_vec[:-1] < precision_negrightevict_thresh)
+                    ] = recall_vec[precision_thresh]
+                    recall_after_eviction[
+                        (labels==0.0)*(tr_vec[:-1] >= precision_negrightevict_thresh)
+                    ] = recall_vec[precision_negrightevict_thresh]
+                    # Abstaining on positives both changes the recall and,
+                    # if the positive is to the right of the new threshold,
+                    # affects where the new threshold is.
+                    recall_after_eviction[
+                        (labels==1.0)*(tr_vec[:-1] >= precision_posrightevict_thresh)
+                    ] = recall_posrightevict_vec[precision_posrightevict_thresh]
+                    recall_after_eviction[
+                        (labels==1.0)*(tr_vec[:-1] < precision_thresh)
+                    ] = recall_posleftevict_vec[precision_thresh]
+                    #recall for examples evicted in between
+                    # precision_thresh and precision_posrightevict_thresh
+                    # need to be calculated with care, because when the
+                    # threshold can move to the other side of the example
+                    # abstained on.
+                    tricky_range_recalls = np.zeros(
+                        precision_posrightevict_thresh-precision_thresh)
+                    i = precision_posrightevict_thresh-1
+                    while i >= precision_thresh:
+                      if (precision_vec[i+1] >= self.precision_threshold):
+                        tricky_range_recalls[
+                            i-precision_thresh] = recall_posleftevict_vec[i+1]
+                      else:
+                        tricky_range_recalls[i-precision_thresh] =\
+                         tricky_range_recalls[i+1-precision_thresh]
+                      i = i-1
+                    recall_after_eviction[
+                        (labels==1.0)
+                        *(tr_vec[:-1] >= precision_thresh)
+                        *(tr_vec[:-1] < precision_posrightevict_thresh)
+                    ] = tricky_range_recalls[(labels==1.0)[
+                        precision_thresh:precision_posrightevict_thresh]]
+                    
+                    recall_deltas =\
+                      recall_after_eviction - recall_vec[precision_thresh]    
+                    tot_recall_deltas += recall_deltas    
+                
+            return self.postprocess_total_scores_marginalabst(
+                total_scores=tot_recall_deltas, indices=indices)
+
+        return abstaining_func
+
 
