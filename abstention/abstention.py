@@ -2,6 +2,7 @@ from __future__ import division, print_function, absolute_import
 import numpy as np
 from sklearn.metrics import roc_auc_score
 from scipy.stats import entropy
+import scipy.signal
 #from sklearn.metrics import average_precision_score
 import sys
 from .calibration import map_to_softmax_format_if_appropriate
