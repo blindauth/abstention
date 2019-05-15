@@ -247,8 +247,6 @@ class DualThresholdsFromPointFiveOnValidSet(AbstainerFactory):
             sorted_posterior_probs = sorted(posterior_probs)
             idx_of_point_five = np.searchsorted(a=sorted_posterior_probs,
                                                 v=0.5) 
-            print("percentile point five",
-                  idx_of_point_five/len(posterior_probs))
 
             abstention_thresholds = []
             for frac_to_abstain in self.fracs_to_abstain_on:
@@ -267,16 +265,15 @@ class DualThresholdsFromPointFiveOnValidSet(AbstainerFactory):
                             zip(valid_labels, valid_posterior)
                             if ((x[1] < left_thresh)
                                 or (x[1] > right_thresh))])
-                    perf = self.metric(y_true=subset_valid_labels,
-                                       y_score=subset_valid_posterior) 
+                    perf = self.metric(
+                        y_true=np.array(subset_valid_labels),
+                        y_score=np.array(subset_valid_posterior)) 
                     thresh_plus_perf.append(
                      ((left_thresh, right_thresh), perf))
                 ((best_left_thresh, best_right_thresh), perf) =\
                     max(thresh_plus_perf, key=lambda x: x[1]) 
                 abstention_thresholds.append((best_left_thresh,
                                               best_right_thresh))
-
-            print(abstention_thresholds)
             abstention_scores = []
             for posterior_prob in posterior_probs:
                 score = 0 
