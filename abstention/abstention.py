@@ -240,6 +240,11 @@ class DualThresholdsFromPointFiveOnValidSet(AbstainerFactory):
     def __call__(self, valid_labels, valid_posterior,
                        valid_uncert=None, train_embeddings=None,
                        train_labels=None):
+        (sorted_valid_posterior, sorted_valid_labels) =\
+            zip(*sorted(zip(valid_posterior,valid_labels),
+            key=lambda x: x[0]))
+        sorted_valid_posterior = np.array(sorted_valid_posterior)
+        sorted_valid_labels = np.array(sorted_valid_labels)
 
         def abstaining_func(posterior_probs,
                             uncertainties=None,
@@ -262,7 +267,7 @@ class DualThresholdsFromPointFiveOnValidSet(AbstainerFactory):
                    
                     (subset_valid_labels, subset_valid_posterior) =\
                       zip(*[x for x in
-                            zip(valid_labels, valid_posterior)
+                            zip(sorted_valid_labels, sorte_valid_posterior)
                             if ((x[1] < left_thresh)
                                 or (x[1] > right_thresh))])
                     perf = self.metric(
