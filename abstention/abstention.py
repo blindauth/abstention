@@ -267,7 +267,7 @@ class DualThresholdsFromPointFiveOnValidSet(AbstainerFactory):
                    
                     (subset_valid_labels, subset_valid_posterior) =\
                       zip(*[x for x in
-                            zip(sorted_valid_labels, sorte_valid_posterior)
+                            zip(sorted_valid_labels, sorted_valid_posterior)
                             if ((x[1] < left_thresh)
                                 or (x[1] > right_thresh))])
                     perf = self.metric(
