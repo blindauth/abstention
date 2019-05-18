@@ -407,91 +407,6 @@ def weighted_kappa_metric(predprobs, true_labels, weights,
                          for (x,y) in zip(predictions,true_labels)])/
                      float(len(predictions)))
     return 1 - numerator/denominator
-         
-
-class WeightedKappa(AbstainerFactory):
-
-    def __init__(self, weights, mode, estimate_class_imbalance_from_valid=False,
-                       verbose=True):
-        self.weights = weights
-        self.mode=mode
-        self.estimate_class_imbalance_from_valid =\
-            estimate_class_imbalance_from_valid
-        self.verbose = verbose
-
-    def __call__(self, valid_labels=None, valid_posterior=None,
-                       valid_uncert=None, train_embeddings=None,
-                       train_labels=None):
-
-        #one-hot encoded validation labels expected
-        if (self.estimate_class_imbalance_from_valid):
-            assert valid_labels is not None
-            assert valid_posterior is not None
-            assert np.max(valid_labels)==1.0
-            assert valid_labels.shape[1]==self.weights.shape[1]
-            assert valid_labels.shape[1]==self.weights.shape[0]
-            assert valid_posterior.shape[1]==self.weights.shape[1]
-            assert valid_posterior.shape[1]==self.weights.shape[0]
-            valid_label_fractions =(
-                np.sum(valid_labels,axis=0)/float(valid_labels.shape[0]))
-            if (self.verbose):
-                print("validation set weighted kappa", 
-                       weighted_kappa_metric(
-                        predprobs=valid_posterior,
-                        true_labels=valid_labels,
-                        weights=self.weights, mode=self.mode))
-                print("validation set estimated weighted kappa from probs", 
-                       weighted_kappa_metric(
-                        predprobs=valid_posterior,
-                        true_labels=valid_posterior,
-                    weights=self.weights, mode=self.mode))
-
-        def abstaining_func(posterior_probs,
-                            uncertainties=None,
-                            embeddings=None):
-            assert posterior_probs.shape[1]==self.weights.shape[1]
-            assert posterior_probs.shape[1]==self.weights.shape[0]
-            est_label_numbers = (valid_label_fractions*len(posterior_probs) 
-              if self.estimate_class_imbalance_from_valid
-              else np.sum(posterior_probs,axis=0))
-            predictions = get_weighted_kappa_predictions(
-                predprobs=posterior_probs, weights=self.weights,
-                mode=self.mode) 
-            pred_class_numbers = np.array([
-                np.sum(predictions==i)
-                for i in range(posterior_probs.shape[1])])
-            expected_confusion_matrix = (
-                (pred_class_numbers[:,None]/float(len(posterior_probs)))*
-                est_label_numbers[None,:])
-            est_denominator = np.sum(expected_confusion_matrix*self.weights)
-            est_numerator = np.sum([np.sum(self.weights[x]*y)
-                             for (x,y) in zip(predictions,
-                                              posterior_probs)])
-            est_kappa = (1 - (est_denominator/est_numerator))
-            #compute the difference abtaining with each example 
-            expected_impact_abstentions = []
-            for example_pred_class,example in zip(predictions,posterior_probs):
-                new_est_kappa = 0
-                #iterate over each possible label class
-                for (label_class_idx,label_class_prob) in enumerate(example):
-                    new_pred_class_numbers = np.array(pred_class_numbers) 
-                    new_pred_class_numbers[example_pred_class] -= 1
-                    new_est_label_numbers = np.array(est_label_numbers)
-                    new_est_label_numbers[label_class_idx] -= 1 
-                    new_expected_confusion_matrix = (
-                        (new_pred_class_numbers[:,None]/
-                         float(len(posterior_probs)-1))*
-                        new_est_label_numbers[None,:])
-                    new_est_denominator = np.sum(
-                        new_expected_confusion_matrix*self.weights)
-                    new_est_numerator = (est_numerator
-                      - self.weights[example_pred_class,label_class_idx]) 
-                    new_est_kappa += label_class_prob*(1 - 
-                     (new_est_numerator/new_est_denominator))
-                expected_impact_abstentions.append(new_est_kappa - est_kappa) 
-            expected_impact_abstentions = np.array(expected_impact_abstentions) 
-            return expected_impact_abstentions
-        return abstaining_func
 
 
 class NegativeAbsLogLikelihoodRatio(AbstainerFactory):
@@ -1621,3 +1536,206 @@ class MonteCarloMarginalDeltaRecallAtPrecisionThreshold(
         return abstaining_func
 
 
+class EstMarginalWeightedKappa(AbstainerFactory):
+
+    def __init__(self, weights, mode,
+                       estimate_class_imbalance_from_valid=False,
+                       verbose=True):
+        self.weights = weights
+        self.mode=mode
+        self.estimate_class_imbalance_from_valid =\
+            estimate_class_imbalance_from_valid
+        self.verbose = verbose
+
+    def __call__(self, valid_labels=None, valid_posterior=None,
+                       valid_uncert=None, train_embeddings=None,
+                       train_labels=None):
+
+        #one-hot encoded validation labels expected
+        if (self.estimate_class_imbalance_from_valid):
+            assert valid_labels is not None
+            assert valid_posterior is not None
+            assert np.max(valid_labels)==1.0
+            assert valid_labels.shape[1]==self.weights.shape[1]
+            assert valid_labels.shape[1]==self.weights.shape[0]
+            assert valid_posterior.shape[1]==self.weights.shape[1]
+            assert valid_posterior.shape[1]==self.weights.shape[0]
+            valid_label_fractions =(
+                np.sum(valid_labels,axis=0)/float(valid_labels.shape[0]))
+            if (self.verbose):
+                print("validation set weighted kappa", 
+                       weighted_kappa_metric(
+                        predprobs=valid_posterior,
+                        true_labels=valid_labels,
+                        weights=self.weights, mode=self.mode))
+                print("validation set estimated weighted kappa from probs", 
+                       weighted_kappa_metric(
+                        predprobs=valid_posterior,
+                        true_labels=valid_posterior,
+                    weights=self.weights, mode=self.mode))
+
+        def abstaining_func(posterior_probs,
+                            uncertainties=None,
+                            embeddings=None):
+            assert posterior_probs.shape[1]==self.weights.shape[1]
+            assert posterior_probs.shape[1]==self.weights.shape[0]
+            est_label_numbers = (valid_label_fractions*len(posterior_probs) 
+              if self.estimate_class_imbalance_from_valid
+              else np.sum(posterior_probs,axis=0))
+            predictions = get_weighted_kappa_predictions(
+                predprobs=posterior_probs, weights=self.weights,
+                mode=self.mode) 
+            pred_class_numbers = np.array([
+                np.sum(predictions==i)
+                for i in range(posterior_probs.shape[1])])
+            expected_confusion_matrix = (
+                (pred_class_numbers[:,None]/float(len(posterior_probs)))*
+                est_label_numbers[None,:])
+            est_denominator = np.sum(expected_confusion_matrix*self.weights)
+            est_numerator = np.sum([np.sum(self.weights[x]*y)
+                             for (x,y) in zip(predictions,
+                                              posterior_probs)])
+            est_kappa = (1 - (est_numerator/est_denominator))
+            
+            est_adj_denominator_term1 = np.sum((
+                (pred_class_numbers[:,None]/float(len(posterior_probs)-1))*
+                est_label_numbers[None,:])*self.weights)
+            est_adj_denominator_term2_vec = np.sum(
+                (1/float(len(posterior_probs)-1))*
+                 pred_class_numbers[None,:]*self.weights, axis=-1)
+            est_adj_denominator_term3_vec = np.sum(
+                (1/float(len(posterior_probs)-1))*
+                 est_label_numbers[None,:]*self.weights, axis=-1)
+
+            #compute the difference abtaining with each example 
+            expected_impact_abstentions = []
+            for example_pred_class,example in zip(predictions,posterior_probs):
+                new_est_kappa = 0
+                #iterate over each possible label class
+                for (label_class_idx,label_class_prob) in enumerate(example):
+                    new_est_numerator = (est_numerator
+                      - self.weights[example_pred_class,label_class_idx]) 
+                    new_est_denominator = (est_adj_denominator_term1
+                         - est_adj_denominator_term2_vec[label_class_idx]
+                         - est_adj_denominator_term3_vec[example_pred_class]                  
+                         + (self.weights[example_pred_class,label_class_idx]/
+                            float(len(posterior_probs)-1)))
+                    new_est_kappa += label_class_prob*(1 -
+                      (new_est_numerator/new_est_denominator))
+                expected_impact_abstentions.append(new_est_kappa - est_kappa) 
+            expected_impact_abstentions = np.array(expected_impact_abstentions) 
+            return expected_impact_abstentions
+        return abstaining_func
+
+
+class RecursiveEstMarginalWeightedKappa(AbstainerFactory):
+
+    def __init__(self, weights, mode,
+                       num_abstained_per_iter,
+                       verbose=True):
+        self.est_marginal_weighted_kappa_abstfunc = EstMarginalWeightedKappa(
+          weights=weights, mode=mode,
+          estimate_class_imbalance_from_valid=False,
+          verbose=verbose)()
+        self.num_abstained_per_iter = num_abstained_per_iter
+
+    def __call__(self, valid_labels=None, valid_posterior=None,
+                       valid_uncert=None, train_embeddings=None,
+                       train_labels=None):
+        def abstaining_func(posterior_probs,
+                            uncertainties=None,
+                            embeddings=None):
+            scores_to_return = np.zeros(len(posterior_probs))
+            retained_posterior_probs = np.array(posterior_probs)
+            retained_indices = np.arange(len(posterior_probs))
+            for iter_num in range(len(self.num_abstained_per_iter)):
+                priorities = self.est_marginal_weighted_kappa_abstfunc(
+                     posterior_probs=retained_posterior_probs)
+                num_to_abstain = self.num_abstained_per_iter[iter_num]
+                (sorted_priority_indices,
+                 sorted_priorities) = zip(*sorted(zip(retained_indices,
+                                                      priorities) ,
+                                                  key=lambda x: x[1]))
+                retained_indices = list(
+                    sorted_priority_indices[:-num_to_abstain])
+                retained_posterior_probs = posterior_probs[retained_indices]
+                abstained_indices = list(
+                    sorted_priority_indices[-num_to_abstain:])
+                scores_to_return[abstained_indices] =(
+                  #iteration-based offset
+                  (len(self.num_abstained_per_iter)-iter_num) 
+                   + np.array(sorted_priorities[-num_to_abstain:]))
+            #last iteration
+            priorities = self.est_marginal_weighted_kappa_abstfunc(
+                posterior_probs=retained_posterior_probs)
+            scores_to_return[retained_indices] = priorities
+            return scores_to_return
+        return abstaining_func
+      
+      
+class MonteCarloMarginalWeightedKappa(AbstainerFactory):
+
+    def __init__(self, weights, mode, n_samples, seed):
+        self.n_samples = n_samples
+        self.weights = weights
+        self.mode = mode
+        self.rng = np.random.RandomState(seed)
+        
+    def sample_labels(self, posterior_probs):      
+        sampled_labels = []
+        for posterior_prob_vec in posterior_probs:
+            sampled_labels.append(self.rng.multinomial(
+                n=1, pvals=posterior_prob_vec, size=1)[0])
+        return np.array(sampled_labels)
+        
+    def __call__(self, valid_labels=None, valid_posterior=None,
+                       valid_uncert=None, train_embeddings=None,
+                       train_labels=None):
+
+        def abstaining_func(posterior_probs,
+                            uncertainties=None,
+                            embeddings=None):
+          
+            tot_marginal_deltas = np.zeros(len(posterior_probs))
+            predictions = get_weighted_kappa_predictions(
+                predprobs=posterior_probs, weights=self.weights,
+                mode=self.mode)
+            pred_class_numbers = np.array([
+                np.sum(predictions==i)
+                for i in range(posterior_probs.shape[1])])
+            for sample_num in range(self.n_samples):
+                labels_onehot = self.sample_labels(
+                    posterior_probs=posterior_probs)
+                label_numbers = np.sum(labels_onehot, axis=0)
+                labels_int = np.argmax(labels_onehot, axis=-1)
+                expected_confusion_matrix = (
+                  (pred_class_numbers[:,None]/float(len(posterior_probs)))*
+                   label_numbers[None,:])
+                denominator = np.sum(expected_confusion_matrix*self.weights)
+                numerator = np.sum(
+                    [self.weights[x,y] for (x,y)
+                     in zip(predictions,labels_int)])
+                kappa = (1 - (numerator/denominator))
+                
+                adj_denominator_term1 = np.sum((
+                 (pred_class_numbers[:,None]/float(len(posterior_probs)-1))*
+                 label_numbers[None,:])*self.weights)
+                adj_denominator_term2_vec = np.sum(
+                 (1/float(len(posterior_probs)-1))*
+                  pred_class_numbers[None,:]*self.weights, axis=-1)
+                adj_denominator_term3_vec = np.sum(
+                 (1/float(len(posterior_probs)-1))*
+                 label_numbers[None,:]*self.weights, axis=-1)
+            
+                #compute the difference abtaining with each example 
+                new_numerators =\
+                  numerator - self.weights[(predictions, labels_int)]
+                new_denominators = (adj_denominator_term1
+                   - adj_denominator_term2_vec[labels_int]
+                   - adj_denominator_term3_vec[predictions]                  
+                   + (self.weights[(predictions, labels_int)]/
+                            float(len(posterior_probs)-1)))
+                new_kappas = (1 - (new_numerators/new_denominators))
+                tot_marginal_deltas += new_kappas - kappa
+            return tot_marginal_deltas/self.n_samples
+        return abstaining_func
