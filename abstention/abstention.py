@@ -6,14 +6,16 @@ import scipy.signal
 #from sklearn.metrics import average_precision_score
 import sys
 from .calibration import map_to_softmax_format_if_appropriate
+from scipy.interpolate import interp1d
 
 
-def basic_average_precision_score(y_true, y_score):
-    y_true = y_true.squeeze()
-    #sort by y_score
-    sorted_y_true, sorted_y_score = zip(*sorted(zip(y_true, y_score),
-                                                 key=lambda x: x[1]))
-    sorted_y_true = np.array(sorted_y_true).astype("float64")
+def assertsorted_average_precision_score(y_true, y_score):
+    #assert y_score is sorted
+    assert np.min(y_score[1:]-y_score[:-1]) >= 0.0, "y_score must be sorted!"
+    return sorted_average_precision_score(y_true, y_score)
+
+
+def sorted_average_precision_score(y_true, y_score):
     num_pos = np.sum(sorted_y_true)
     num_neg = np.sum(1-sorted_y_true)
     num_pos_above = num_pos - np.cumsum(sorted_y_true)
@@ -23,6 +25,16 @@ def basic_average_precision_score(y_true, y_score):
     precisions = num_pos_above/(num_pos_above+num_neg_above).astype("float64")
     average_precision = np.sum(sorted_y_true*precisions)/(num_pos)
     return average_precision
+
+
+def basic_average_precision_score(y_true, y_score):
+    y_true = y_true.squeeze()
+    #sort by y_score
+    sorted_y_true, sorted_y_score = zip(*sorted(zip(y_true, y_score),
+                                                 key=lambda x: x[1]))
+    sorted_y_true = np.array(sorted_y_true).astype("float64")
+    return sorted_average_precision_score(y_true=sorted_y_true,
+                                          y_score=sorted_y_score)
 
 average_precision_score = basic_average_precision_score
 
@@ -1291,6 +1303,80 @@ class MonteCarloMarginalDeltaTprAtFprThreshold(MonteCarloSampler):
             
             return self.postprocess_total_scores_marginalabst(
                 total_scores=tot_tpr_deltas, indices=indices)
+
+        return abstaining_func
+
+
+class MonteCarloSubsampleNaiveEval(MonteCarloSamplerWindowAbst):
+
+    def __init__(self, metric, num_to_subsample,
+                       **kwargs):
+        super(MonteCarloSubsampleNaiveEval, self).__init__(**kwargs)
+        self.metric = metric
+        self.num_to_subsample = num_to_subsample 
+
+    def __call__(self):
+        
+        def abstaining_func(posterior_probs, uncertainties=None,
+                            embeddings=None):
+            rng = np.random.RandomState(seed)
+            (sorted_probs, indices) = get_sorted_probs_and_indices(
+                            posterior_probs=posterior_probs)
+            all_windowstart_indices = np.arange(
+             len(sorted_probs)-self.window_size) 
+            #evenly subsample potential start indices
+            evensubsample_stride = int(len(all_windowstart_indices)/
+                                       self.num_to_subsample)
+            evensubsample_windowstart_indices =\
+                all_windowstart_indices[::evensubsample_stride]
+            evensubsample_abstintervals = [
+                (sorted_probs[i], sorted_probs[i+self.num_to_abstain_on])
+                for i in evensubsample_windowstart_indices] 
+            assert len(evensubsample_abstintervals)==self.num_to_subsample
+
+            arange_allprobs = np.arange(len(sorted_probs))
+
+            totalscores_evensubsample_abstintervals =\
+                np.zeros(len(evensubsample_abstintervals))
+            for mc_sample in range(self.n_samples):
+                #take a subsample of this dataset for this mcit 
+                randomsubsample_indices_mcit = set(rng.choice(indices_arange,
+                    self.num_to_subsample, replace=False))
+                randomsubsample_booleanmask_mcit =\
+                    np.array([True if i in randomsubsample_indices_mcit
+                              else False for i in arange_allprobs])
+                #get random subset that's in sorted order
+                randomsubsample_sortedprobs_mcit =\
+                    sorted_probs[randomsubsample_booleanmask_mcit] 
+                randomsubsample_ytrue_mcit, _, _ = self.sample_labels(
+                    posterior_probs=randomsubsample_sortedprobs_mcit)
+
+                mcit_totalscores_evensubsample = []
+                for (abst_interval_start,
+                     abst_interval_end) in evensubsample_abstintervals:
+                    surviving_mask = np.array([
+                        True if (x<abst_interval_start or x>abst_interval_end)
+                        else False for x in randomsubsample_sortedprobs_mcit])
+                    surviving_sorted_probs = mcit_sorted_probs[surviving_mask] 
+                    surviving_sorted_ytrue = mcit_sorted_ytrue[surviving_mask]
+                    perf = self.metric(y_score=surviving_sorted_probs,
+                                       y_true=surviving_sorted_ytrue)
+                    mcit_totalscores_evensubsample.append(perf) 
+                totalscores_evensubsample_abstintervals += np.array(
+                                           mcit_totalscores_evensubsample)
+
+            #use linear interpolation between subsampled indices to get
+            # estimated perf at the indices that weren't sampled
+            onedinterpolator = interp1d(
+                x=evensubsample_windowstart_indices,
+                y=totalscores_evensubsample_abstintervals,
+                fill_value="extrapolate")
+            interpolated_sumabstinterval_to_perf = onedinterpolator(
+                all_windowstart_indices)
+
+            return self.postprocess_total_scores_windowabst(
+                total_scores=interpolated_sumabstinterval_to_perf,
+                indices=indices)
 
         return abstaining_func
 
