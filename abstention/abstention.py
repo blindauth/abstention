@@ -1047,14 +1047,7 @@ class MonteCarloSamplerWindowAbst(MonteCarloSampler):
         window_size = self.num_to_abstain_on
         assert len(mean_scores) == (len(indices) + 1 - window_size), (
                 len(mean_scores), (len(indices) + 1 - window_size))
-        num_pos = np.sum(labels) 
-        num_neg = total_num - num_pos
-        pos_cdfs = np.cumsum(labels)/num_pos 
-        neg_cdfs = np.cumsum(1-labels)/num_neg
-        metric = marginal_delta_metric_mixin.compute_metric(
-                                             y_true=labels, y_score=scores)
         smoothed_scores = self.smooth_signal(signal=mean_scores)
-        unreordered_scores = None   
         unreordered_scores = pad_windowed_scores(
             signal=smoothed_scores,
             return_max_across_windows=self.return_max_across_windows,
