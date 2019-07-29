@@ -1251,7 +1251,7 @@ class MonteCarloSubsampleNaiveEval(MonteCarloSamplerWindowAbst):
             evensubsample_abstintervals = [
                 (sorted_probs[i], sorted_probs[i+self.num_to_abstain_on-1])
                 for i in evensubsample_windowstart_indices] 
-            assert len(evensubsample_abstintervals)==self.num_to_subsample
+            print("Subsampled",len(evensubsample_abstintervals),"intervals")
 
             arange_allprobs = np.arange(len(sorted_probs))
 
