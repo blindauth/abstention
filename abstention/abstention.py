@@ -1360,7 +1360,7 @@ def compute_auprc_delta(labels, window_size):
     #Compute C, D and deltaA
     C = zeroinfrontcumsum((window_size*precisions)/(
                           len(labels)-indices-window_size))
-    D = zeroinfrontcumsum(1.0/(N-indices-window_size))
+    D = zeroinfrontcumsum(1.0/(len(labels)-indices-window_size))
     deltaA = C - npos_in_window*D
     #Compute new_Q
     new_Q = (Q*totpos + deltaA[:-window_size] - Bs)/(totpos-npos_in_window)
