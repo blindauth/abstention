@@ -1260,7 +1260,7 @@ class MonteCarloSubsampleNaiveEval(MonteCarloSamplerWindowAbst):
             for mc_sample in range(self.n_samples):
                 #take a subsample of this dataset for this mcit 
                 randomsubsample_indices_mcit = set(self.rng.choice(
-                    indices_arange,
+                    arange_allprobs,
                     self.num_to_subsample, replace=False))
                 randomsubsample_booleanmask_mcit =\
                     np.array([True if i in randomsubsample_indices_mcit
