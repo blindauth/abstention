@@ -9,6 +9,16 @@ from .calibration import map_to_softmax_format_if_appropriate
 from scipy.interpolate import interp1d
 
 
+def zeroinfrontcumsum(vals):
+    return np.array([0]+list(np.cumsum(vals)))
+
+
+def get_pos_and_neg_cumsum(labels):
+    pos_cumsum = zeroinfrontcumsum(labels)
+    neg_cumsum = zeroinfrontcumsum(1-labels)
+    return pos_cumsum, neg_cumsum
+
+
 def assertsorted_average_precision_score(y_true, y_score):
     #assert y_score is sorted
     assert np.min(y_score[1:]-y_score[:-1]) >= 0.0, "y_score must be sorted!"
@@ -16,14 +26,14 @@ def assertsorted_average_precision_score(y_true, y_score):
 
 
 def sorted_average_precision_score(y_true, y_score):
-    num_pos = np.sum(sorted_y_true)
-    num_neg = np.sum(1-sorted_y_true)
-    num_pos_above = num_pos - np.cumsum(sorted_y_true)
-    num_neg_above = num_neg - np.cumsum(1-sorted_y_true)
-    num_pos_above[-1] = 1.0
-    num_neg_above[-1] = 0.0
+    cumsum_pos = zeroinfrontcumsum(y_true)
+    cumsum_neg = zeroinfrontcumsum(1-y_true)
+    num_pos = cumsum_pos[-1] 
+    num_neg = cumsum_neg[-1] 
+    num_pos_above = num_pos - cumsum_pos[:-1]
+    num_neg_above = num_neg - cumsum_neg[:-1]
     precisions = num_pos_above/(num_pos_above+num_neg_above).astype("float64")
-    average_precision = np.sum(sorted_y_true*precisions)/(num_pos)
+    average_precision = np.sum(y_true*precisions)/(num_pos)
     return average_precision
 
 
@@ -1004,9 +1014,7 @@ class MonteCarloSampler(AbstainerFactory):
     def sample(self, sorted_probs):
         true_labels = 1.0*(self.rng.rand(*sorted_probs.shape)
                            < sorted_probs)
-        pos_cumsum = np.array([0]+list(np.cumsum(true_labels)))
-        neg_cumsum = np.array([0]+list(np.cumsum(1-true_labels))) 
-        return true_labels, pos_cumsum, neg_cumsum
+        return true_labels
    
     def postprocess_total_scores_marginalabst(self, total_scores, indices):
         mean_scores = total_scores/self.n_samples
@@ -1047,8 +1055,7 @@ class MonteCarloSamplerWindowAbst(MonteCarloSampler):
         return reorder_scores(unreordered_scores=unreordered_scores,
                               indices=indices)
 
-    def calculate_metric_deltas(self, labels, pos_cumsum,
-                                      neg_cumsum, window_size):
+    def calculate_metric_deltas(self, labels, window_size):
         raise NotImplementedError() 
 
     def __call__(self, **kwargs):
@@ -1061,11 +1068,9 @@ class MonteCarloSamplerWindowAbst(MonteCarloSampler):
             tot_metric_deltas = np.zeros((len(sorted_probs)+1)-window_size)       
             
             for sample_num in range(self.n_samples):
-                labels, pos_cumsum, neg_cumsum = self.sample(
-                    sorted_probs=sorted_probs)
+                labels = self.sample(sorted_probs=sorted_probs)
                 tot_metric_deltas += self.calculate_metric_deltas(
-                    labels=labels, pos_cumsum=pos_cumsum,
-                    neg_cumsum=neg_cumsum, window_size=window_size)
+                    labels=labels, window_size=window_size)
                 
             return self.postprocess_total_scores_windowabst(
                 total_scores=tot_metric_deltas, indices=indices)
@@ -1090,8 +1095,8 @@ class MonteCarloMarginalDeltaAuRoc(MonteCarloSampler):
             tot_auroc_deltas = np.zeros(len(sorted_probs))
 
             for sample_num in range(self.n_samples):
-                labels, pos_cumsum, neg_cumsum = self.sample(
-                    sorted_probs=sorted_probs) 
+                labels = self.sample(sorted_probs=sorted_probs) 
+                pos_cumsum, neg_cumsum = get_pos_and_neg_cumsum(labels)
                 
                 tot_neg = neg_cumsum[-1]
                 tot_pos = pos_cumsum[-1]
@@ -1132,8 +1137,9 @@ class MonteCarloWindowAbstDeltaTprAtFprThreshold(MonteCarloSamplerWindowAbst):
             return_max_across_windows=return_max_across_windows,
             **kwargs)
 
-    def calculate_metric_deltas(self, labels, pos_cumsum,
-                                      neg_cumsum, window_size):
+    def calculate_metric_deltas(self, labels, window_size):
+    
+        pos_cumsum, neg_cumsum = get_pos_and_neg_cumsum(labels)
         tot_tpr_deltas = np.zeros((len(labels)+1)-window_size)
         window_start_idx = np.arange((len(labels)+1)-window_size)
         window_end_idx = window_start_idx+window_size
@@ -1262,7 +1268,7 @@ class MonteCarloSubsampleNaiveEval(MonteCarloSamplerWindowAbst):
                 #get random subset that's in sorted order
                 randomsubsample_sortedprobs_mcit =\
                     sorted_probs[randomsubsample_booleanmask_mcit] 
-                randomsubsample_ytrue_mcit, _, _ = self.sample_labels(
+                randomsubsample_ytrue_mcit = self.sample(
                     posterior_probs=randomsubsample_sortedprobs_mcit)
                 curr_metric = self.metric(
                     y_score=randomsubsample_sortedprobs_mcit,
@@ -1298,11 +1304,8 @@ class MonteCarloSubsampleNaiveEval(MonteCarloSamplerWindowAbst):
         return abstaining_func
 
 
-def compute_auroc_delta(labels, window_size, pos_cumsum, neg_cumsum):
-    if (pos_cumsum is None):
-        pos_cumsum = np.array([0]+list(np.cumsum(labels)))
-    if (neg_cumsum is None):
-        neg_cumsum = np.array([0]+list(np.cumsum(1-labels)))
+def compute_auroc_delta(labels, window_size):
+    pos_cumsum, neg_cumsum = get_pos_and_neg_cumsum(labels)
     totpos = float(pos_cumsum[-1])
     totneg = float(neg_cumsum[-1])
     sum_negcumsum = np.sum(neg_cumsum[1:]*labels)
@@ -1313,8 +1316,7 @@ def compute_auroc_delta(labels, window_size, pos_cumsum, neg_cumsum):
                       pos_cumsum[:-window_size])
     nneg_in_window = window_size-npos_in_window
     #also compute the sum of neg_cumsum*labels in each window
-    cumsum_negcumsum = np.array(
-        [0]+list(np.cumsum(neg_cumsum[1:]*labels)))
+    cumsum_negcumsum = zeroinfrontcumsum(neg_cumsum[1:]*labels)
     negcumsum_in_window = (cumsum_negcumsum[window_size:] -
                            cumsum_negcumsum[:-window_size])
     
@@ -1334,29 +1336,59 @@ def compute_auroc_delta(labels, window_size, pos_cumsum, neg_cumsum):
     return new_auroc - curr_auroc 
 
 
+def compute_auprc_delta(labels, window_size):
+    pos_cumsum, neg_cumsum = get_pos_and_neg_cumsum(labels)
+    totpos = float(pos_cumsum[-1])
+    totneg = float(neg_cumsum[-1])
+
+    pos_above = totpos - pos_cumsum
+    neg_above = totneg - neg_cumsum
+
+    #compute the number of positives in each window
+    npos_in_window = (pos_cumsum[window_size:] -
+                      pos_cumsum[:-window_size])
+
+    indices = np.arange(labels)
+
+    precisions = pos_above[:-1]/(len(labels)-indices)
+    precs_times_ispos = precisions*labels 
+    #Q is the average precision over positives
+    Q = np.sum(precs_times_ispos)/totpos
+    #Compute A and B
+    A = zeroinfrontcumsum(precs_times_ispos) 
+    B = A[window_size:] - A[:-window_size]
+    #Compute C, D and deltaA
+    C = zeroinfrontcumsum((window_size*precisions)/(N-indices-window_size))
+    D = zeroinfrontcumsum(1.0/(N-indices-window_size))
+    deltaA = C - npos_in_window*D
+    #Compute new_Q
+    new_Q = (Q*totpos + deltaA[:-window_size] - Bs)/(totpos-npos_in_window)
+    return new_Q - Q 
+
+
 class MonteCarloWindowAbstDeltaAuroc(MonteCarloSamplerWindowAbst):
 
-    def __init__(self, n_samples, num_to_abstain_on,
-                       return_max_across_windows,
-                       smoothing_window_size, **kwargs):
-        super(MonteCarloWindowAbstDeltaAuroc, self).__init__(
-            n_samples=n_samples, smoothing_window_size=smoothing_window_size,
-            num_to_abstain_on=num_to_abstain_on,
-            return_max_across_windows=return_max_across_windows,
-            **kwargs)
-
-    def calculate_metric_deltas(self, labels, pos_cumsum,
-                                      neg_cumsum, window_size):
-        return compute_auroc_delta(labels, window_size,
-                                   pos_cumsum, neg_cumsum)
+    def calculate_metric_deltas(self, labels, window_size):
+        return compute_auroc_delta(labels=labels,
+                                   window_size=window_size)
 
 
-class EstWindowAbstDeltaAuroc(AbstainerFactory):
+class MonteCarloWindowAbstDeltaAuprc(MonteCarloSamplerWindowAbst):
+
+    def calculate_metric_deltas(self, labels, window_size):
+        return compute_auprc_delta(labels=labels,
+                                   window_size=window_size)
+
+
+class EstWindowAbstDeltaMetric(AbstainerFactory):
 
     def __init__(self, num_to_abstain_on, return_max_across_windows):
         self.num_to_abstain_on = num_to_abstain_on
         self.return_max_across_windows = return_max_across_windows
-    
+
+    def calculate_metric_deltas(self, sorted_probs, window_size):
+        raise NotImplementedError()
+
     def __call__(self, **kwargs):
       
         def abstaining_func(posterior_probs, uncertainties=None,
@@ -1364,9 +1396,8 @@ class EstWindowAbstDeltaAuroc(AbstainerFactory):
             (sorted_probs, indices) = get_sorted_probs_and_indices(
                             posterior_probs=posterior_probs)
             window_size = self.num_to_abstain_on
-            est_auroc_deltas = compute_auroc_deltas(
-                labels=sorted_probs, pos_cumsum=None,
-                neg_cumsum=None, window_size=window_size) 
+            est_auroc_deltas = self.calculate_metric_deltas(
+                sorted_probs=sorted_probs, window_size=window_size) 
             
             return reorder_scores(
                 unreordered_scores=pad_windowed_scores(
@@ -1375,6 +1406,20 @@ class EstWindowAbstDeltaAuroc(AbstainerFactory):
                   window_size=window_size),
                 indices=indices)
         return abstaining_func
+
+
+class EstWindowAbstDeltaAuroc(EstWindowAbstDeltaMetric):
+
+    def calculate_metric_deltas(self, sorted_probs, window_size):
+        return compute_auroc_delta(labels=sorted_probs,
+                                   window_size=window_size)
+
+
+class EstWindowAbstDeltaAuprc(EstWindowAbstDeltaMetric):
+
+    def calculate_metric_deltas(self, sorted_probs, window_size):
+        return compute_auprc_delta(labels=sorted_probs,
+                                   window_size=window_size)
 
 
 class MonteCarloMarginalDeltaRecallAtPrecisionThreshold(
@@ -1403,8 +1448,8 @@ class MonteCarloMarginalDeltaRecallAtPrecisionThreshold(
             tot_recall_deltas = np.zeros(len(sorted_probs))
             
             for sample_num in range(self.n_samples):
-                labels, pos_cumsum, neg_cumsum = self.sample(
-                    sorted_probs=sorted_probs) 
+                labels = self.sample(sorted_probs=sorted_probs) 
+                pos_cumsum, neg_cumsum = get_pos_and_neg_cumsum(labels)
                 totpos = pos_cumsum[-1]
                 totneg = neg_cumsum[-1]
                 pos_above = totpos - pos_cumsum
