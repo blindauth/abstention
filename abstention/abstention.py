@@ -1235,7 +1235,7 @@ class MonteCarloSubsampleNaiveEval(MonteCarloSamplerWindowAbst):
         self.metric = metric
         self.num_to_subsample = num_to_subsample 
 
-    def __call__(self): #overwrite the default call
+    def __call__(self, **kwargs): #overwrite the default call
         
         def abstaining_func(posterior_probs, uncertainties=None,
                             embeddings=None):
