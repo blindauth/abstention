@@ -1242,7 +1242,7 @@ class MonteCarloSubsampleNaiveEval(MonteCarloSamplerWindowAbst):
             (sorted_probs, indices) = get_sorted_probs_and_indices(
                             posterior_probs=posterior_probs)
             all_windowstart_indices = np.arange(
-             len(sorted_probs)-self.window_size) 
+             len(sorted_probs)-self.num_to_abstain_on) 
             #evenly subsample potential start indices
             evensubsample_stride = int(len(all_windowstart_indices)/
                                        self.num_to_subsample)
