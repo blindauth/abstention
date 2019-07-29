@@ -1280,8 +1280,10 @@ class MonteCarloSubsampleNaiveEval(MonteCarloSamplerWindowAbst):
                     surviving_mask = np.array([
                         True if (x<abst_interval_start or x>abst_interval_end)
                         else False for x in randomsubsample_sortedprobs_mcit])
-                    surviving_sorted_probs = mcit_sorted_probs[surviving_mask] 
-                    surviving_sorted_ytrue = mcit_sorted_ytrue[surviving_mask]
+                    surviving_sorted_probs =\
+                        randomsubsample_sortedprobs_mcit[surviving_mask] 
+                    surviving_sorted_ytrue =\
+                        randomsubsample_ytrue_mcit[surviving_mask]
                     perf = self.metric(y_score=surviving_sorted_probs,
                                        y_true=surviving_sorted_ytrue)
                     mcit_totalscores_evensubsample.append(perf) 
