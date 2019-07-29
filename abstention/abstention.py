@@ -1348,7 +1348,7 @@ def compute_auprc_delta(labels, window_size):
     npos_in_window = (pos_cumsum[window_size:] -
                       pos_cumsum[:-window_size])
 
-    indices = np.arange(labels)
+    indices = np.arange(len(labels))
 
     precisions = pos_above[:-1]/(len(labels)-indices)
     precs_times_ispos = precisions*labels 
