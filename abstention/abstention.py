@@ -1269,7 +1269,7 @@ class MonteCarloSubsampleNaiveEval(MonteCarloSamplerWindowAbst):
                 randomsubsample_sortedprobs_mcit =\
                     sorted_probs[randomsubsample_booleanmask_mcit] 
                 randomsubsample_ytrue_mcit = self.sample(
-                    posterior_probs=randomsubsample_sortedprobs_mcit)
+                    sorted_probs=randomsubsample_sortedprobs_mcit)
                 curr_metric = self.metric(
                     y_score=randomsubsample_sortedprobs_mcit,
                     y_true=randomsubsample_ytrue_mcit)
