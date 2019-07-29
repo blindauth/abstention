@@ -1249,7 +1249,7 @@ class MonteCarloSubsampleNaiveEval(MonteCarloSamplerWindowAbst):
             evensubsample_windowstart_indices =\
                 all_windowstart_indices[::evensubsample_stride]
             evensubsample_abstintervals = [
-                (sorted_probs[i], sorted_probs[i+self.num_to_abstain_on])
+                (sorted_probs[i], sorted_probs[i+self.num_to_abstain_on-1])
                 for i in evensubsample_windowstart_indices] 
             assert len(evensubsample_abstintervals)==self.num_to_subsample
 
