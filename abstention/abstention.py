@@ -1045,7 +1045,14 @@ class MonteCarloSamplerWindowAbst(MonteCarloSampler):
         #total_scores has length of len(indices)+1-window_size
         #represents score when a window beginning at that index is abstained on
         window_size = self.num_to_abstain_on
-        assert len(mean_scores) == (len(indices) + 1 - window_size)
+        assert len(mean_scores) == (len(indices) + 1 - window_size), (
+                len(mean_scores), (len(indices) + 1 - window_size))
+        num_pos = np.sum(labels) 
+        num_neg = total_num - num_pos
+        pos_cdfs = np.cumsum(labels)/num_pos 
+        neg_cdfs = np.cumsum(1-labels)/num_neg
+        metric = marginal_delta_metric_mixin.compute_metric(
+                                             y_true=labels, y_score=scores)
         smoothed_scores = self.smooth_signal(signal=mean_scores)
         unreordered_scores = None   
         unreordered_scores = pad_windowed_scores(
@@ -1242,7 +1249,7 @@ class MonteCarloSubsampleNaiveEval(MonteCarloSamplerWindowAbst):
             (sorted_probs, indices) = get_sorted_probs_and_indices(
                             posterior_probs=posterior_probs)
             all_windowstart_indices = np.arange(
-             len(sorted_probs)-self.num_to_abstain_on) 
+             len(sorted_probs)-self.num_to_abstain_on+1) 
             #evenly subsample potential start indices
             evensubsample_stride = int(len(all_windowstart_indices)/
                                        self.num_to_subsample)
