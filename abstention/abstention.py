@@ -1358,7 +1358,8 @@ def compute_auprc_delta(labels, window_size):
     A = zeroinfrontcumsum(precs_times_ispos) 
     B = A[window_size:] - A[:-window_size]
     #Compute C, D and deltaA
-    C = zeroinfrontcumsum((window_size*precisions)/(N-indices-window_size))
+    C = zeroinfrontcumsum((window_size*precisions)/(
+                          len(labels)-indices-window_size))
     D = zeroinfrontcumsum(1.0/(N-indices-window_size))
     deltaA = C - npos_in_window*D
     #Compute new_Q
