@@ -1194,7 +1194,7 @@ class MonteCarloWindowAbstDeltaTprAtFprThreshold(MonteCarloSamplerWindowAbst):
         for negleftevic in range(window_size+1):
             #increment the threshold as needed until we satisfy
             # the fpr constraint
-            while (curr_thresh < len(sorted_probs) and
+            while (curr_thresh < len(labels) and
                    negtoleft_eviction_tolerable[curr_thresh]
                    < negleftevic):
                 curr_thresh = curr_thresh + 1
