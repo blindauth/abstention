@@ -1353,6 +1353,7 @@ def compute_auprc_delta(labels, window_size):
     indices = np.arange(len(labels))
 
     precisions = pos_above[:-1]/(len(labels)-indices)
+    
     precs_times_ispos = precisions*labels 
     #Q is the average precision over positives
     Q = np.sum(precs_times_ispos)/totpos
@@ -1360,9 +1361,9 @@ def compute_auprc_delta(labels, window_size):
     A = zeroinfrontcumsum(precs_times_ispos) 
     B = A[window_size:] - A[:-window_size]
     #Compute C, D and deltaA
-    C = zeroinfrontcumsum((window_size*precisions[:-window_size])/(
+    C = zeroinfrontcumsum((window_size*precs_times_ispos[:-window_size])/(
                           (len(labels)-indices-window_size)[:-window_size]))
-    D = zeroinfrontcumsum(1.0/
+    D = zeroinfrontcumsum(labels[:-window_size]/
          ((len(labels)-indices-window_size)[:-window_size]))
     deltaA = C - npos_in_window*D
     #Compute new_Q
