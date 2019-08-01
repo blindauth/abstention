@@ -1,3 +1,3 @@
 # Abstention
 
-Blinded submission
+(Explanatory videos will be added by August 3rd)
