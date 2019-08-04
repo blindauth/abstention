@@ -1,3 +1,3 @@
 # Abstention
 
-(Explanatory videos will be added by August 3rd)
+For a video explaining the auPRC optimization algorithm, see https://youtu.be/RtUvad75ny0
