@@ -1,3 +1,3 @@
 # Abstention
 
-For a video explaining the auPRC optimization algorithm, see https://youtu.be/RtUvad75ny0
+For a video explaining the auPRC optimization algorithm, see https://youtu.be/C-O9ggpknR8
