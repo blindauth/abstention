@@ -89,9 +89,10 @@ class EMImbalanceAdapter(AbstractImbalanceAdapter):
         self.max_iterations = max_iterations
         self.initialization_weight_ratio = initialization_weight_ratio
 
-    def __call__(self, valid_labels,
-                       tofit_initial_posterior_probs,
-                       valid_posterior_probs):
+    #valid_labels are only needed if calibration is to be performed
+    def __call__(self, tofit_initial_posterior_probs,
+                       valid_posterior_probs,
+                       valid_labels=None):
 
         #if binary labels were provided, convert to softmax format
         # for consistency
@@ -110,14 +111,14 @@ class EMImbalanceAdapter(AbstractImbalanceAdapter):
       
         #fit calibration if needed
         if (self.calibrator_factory is not None):
-            assert valid_posterior_probs is not None 
+            assert softmax_valid_posterior_probs is not None 
             calibrator_func = self.calibrator_factory(
                 valid_preacts=softmax_valid_posterior_probs,
                 valid_labels=softmax_valid_labels,
                 posterior_supplied=True) 
         else:
             calibrator_func = lambda x: x
-        valid_posterior_probs = calibrator_func(valid_posterior_probs)
+        softmax_valid_posterior_probs = calibrator_func(softmax_valid_posterior_probs)
         tofit_initial_posterior_probs = calibrator_func(
             tofit_initial_posterior_probs)
 
