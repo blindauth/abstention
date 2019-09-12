@@ -80,7 +80,8 @@ class CalibratorFactory(object):
 class Softmax(CalibratorFactory):
 
     def __call__(self, valid_preacts=None, valid_labels=None):
-        return (lambda x: softmax(preact=x, temp=1.0))
+        return (lambda preact: softmax(preact=preact,
+                                       temp=1.0, biases=None))
 
 
 def get_hard_preds(softmax_preds):
@@ -352,6 +353,14 @@ class Expit(CalibratorFactory):
     def __call__(self, valid_preacts=None, valid_labels=None):
         def func(preact):
             return expit(preact)
+        return func
+        
+
+class Softmax(CalibratorFactory):
+
+    def __call__(self, valid_preacts=None, valid_labels=None):
+        def func(preact):
+            return softmax(preact, temp=1.0, biases=None)
         return func
 
 
