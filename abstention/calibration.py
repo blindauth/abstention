@@ -266,9 +266,6 @@ class CrossValidatedBCTS(TempScaling):
             heldout_nll_histories.append(heldout_nll_history)
 
             if (self.verbose):
-                print("_t",_t)
-                print("_biases:",_biases)
-                print("_bias_positions:",_bias_positions)
                 print("Bias diff history", biasdiff_history)
                 print("Heldout nll history", heldout_nll_history)
 
@@ -279,9 +276,9 @@ class CrossValidatedBCTS(TempScaling):
             print("Avg heldout nll history",
                   avgacrosssplits_heldout_nll_history)
         
-        best_numbias = np.argmax(avgacrosssplits_heldout_nll_history)
+        best_numbias = np.argmin(avgacrosssplits_heldout_nll_history)
         if (self.verbose):
-            print("Based numbias", best_numbias)
+            print("Best numbias", best_numbias)
         (optimal_t, biases, bias_positions,
          biasdiff_history, _) = increase_num_bias_terms_and_fit_sequentially(
                    preacts=valid_preacts,
@@ -309,7 +306,7 @@ def increase_num_bias_terms_and_fit_sequentially(
     bias_positions = []
     for num_biases in range(total_num_biases+1):
         if (verbose):
-            print("On bias #",num_biases)
+            print("On bias #",num_biases,"bias positions",bias_positions)
         (optimal_t, biases) = do_tempscale_optimization(
             labels=labels,
             preacts=preacts,
