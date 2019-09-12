@@ -281,7 +281,7 @@ class CrossValidatedBCTS(TempScaling):
         if (self.verbose):
             print("Best numbias", best_numbias)
         (optimal_t, biases, bias_positions,
-         biasdiff_history, _) = increase_num_bias_terms_and_fit_sequentially(
+         biasdiff_history, _, _) = increase_num_bias_terms_and_fit_sequentially(
                    preacts=valid_preacts,
                    labels=valid_labels,
                    total_num_biases=best_numbias,
