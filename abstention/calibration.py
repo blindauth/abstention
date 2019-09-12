@@ -104,7 +104,7 @@ class ConfusionMatrix(CalibratorFactory):
 
 def compute_nll(labels, preacts, t, bs):
     tsb_preacts = preacts/float(t) + bs[None,:]
-    log_sum_exp = scipy.misc.logsumexp(a=tsb_preacts, axis=1) 
+    log_sum_exp = scipy.special.logsumexp(a=tsb_preacts, axis=1) 
     tsb_logits_trueclass = np.sum(tsb_preacts*labels, axis=1)
     log_likelihoods = tsb_logits_trueclass - log_sum_exp
     nll = -np.mean(log_likelihoods)
@@ -121,7 +121,7 @@ def do_tempscale_optimization(labels, preacts, bias_positions, verbose,
             bs[bias_pos] = x[1+bias_pos_idx] 
         #tsb = temp_scaled_biased
         tsb_preacts = preacts/float(t) + bs[None,:]
-        log_sum_exp = scipy.misc.logsumexp(a=tsb_preacts, axis=1) 
+        log_sum_exp = scipy.special.logsumexp(a=tsb_preacts, axis=1) 
 
         exp_tsb_logits = np.exp(tsb_preacts)
         sum_exp = np.sum(exp_tsb_logits, axis=1)
