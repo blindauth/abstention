@@ -253,7 +253,8 @@ class CrossValidatedBCTS(TempScaling):
             cv_heldout_preacts = np.array(cv_heldout_preacts)
             cv_heldout_labels = np.array(cv_heldout_labels)
 
-            (_, _, _, biasdiff_history, heldout_nll_history) =\
+            (_t, _biases, _bias_positions,
+             biasdiff_history, heldout_nll_history) =\
                  increase_num_bias_terms_and_fit_sequentially(
                    preacts=training_preacts,
                    labels=training_labels,
@@ -265,6 +266,9 @@ class CrossValidatedBCTS(TempScaling):
             heldout_nll_histories.append(heldout_nll_history)
 
             if (self.verbose):
+                print("_t",_t)
+                print("_biases:",_biases)
+                print("_bias_positions:",_bias_positions)
                 print("Bias diff history", biasdiff_history)
                 print("Heldout nll history", heldout_nll_history)
 
@@ -310,7 +314,7 @@ def increase_num_bias_terms_and_fit_sequentially(
             labels=labels,
             preacts=preacts,
             bias_positions=bias_positions,
-            verbose=verbose,
+            verbose=False,
             lbfgs_kwargs=lbfgs_kwargs)
         if (heldout_preacts is not None):
             heldout_nll = compute_nll(labels=heldout_labels,
