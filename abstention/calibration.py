@@ -329,7 +329,7 @@ def increase_num_bias_terms_and_fit_sequentially(
             biasdiff_history.append(max_abs_bias_diff)
             #of the positions that have not been bias-corrected, figure out
             #which one has the largest bias; include that in bias_positions
-            biaspos_and_biasdiff = [x for x in enumerate(bias_diff) if
+            biaspos_and_biasdiff = [x for x in enumerate(abs_bias_diff) if
                                     x[0] not in bias_positions]
             next_bias_pos,_ = max(index_and_biasdiff, key=lambda x: x[1]) 
             bias_positions.append(next_bias_pos) 
