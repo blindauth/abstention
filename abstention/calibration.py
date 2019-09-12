@@ -102,6 +102,87 @@ class ConfusionMatrix(CalibratorFactory):
         return (lambda preact: confusion_matrix[np.argmax(preact,axis=-1)]) 
 
 
+def compute_nll(labels, preacts, t, bs):
+    tsb_preacts = preacts/float(t) + bs[None,:]
+    log_sum_exp = scipy.misc.logsumexp(a=tsb_preacts, axis=1) 
+    tsb_logits_trueclass = np.sum(tsb_preacts*labels, axis=1)
+    log_likelihoods = tsb_logits_trueclass - log_sum_exp
+    nll = -np.mean(log_likelihoods)
+    return nll
+
+
+def do_tempscale_optimization(labels, preacts, bias_positions, verbose,
+                              lbfgs_kwargs):
+      
+    def eval_func(x):
+        t = x[0]
+        bs = np.zeros(labels.shape[1])
+        for bias_pos_idx, bias_pos in enumerate(bias_positions):
+            bs[bias_pos] = x[1+bias_pos_idx] 
+        #tsb = temp_scaled_biased
+        tsb_preacts = preacts/float(t) + bs[None,:]
+        log_sum_exp = scipy.misc.logsumexp(a=tsb_preacts, axis=1) 
+
+        exp_tsb_logits = np.exp(tsb_preacts)
+        sum_exp = np.sum(exp_tsb_logits, axis=1)
+        sum_preact_times_exp = np.sum(preacts*exp_tsb_logits, axis=1)
+
+        notsb_logits_trueclass =\
+            np.sum(preacts*labels, axis=1)
+        tsb_logits_trueclass =\
+            np.sum(tsb_preacts*labels, axis=1)
+        
+        log_likelihoods = tsb_logits_trueclass - log_sum_exp
+        nll = -np.mean(log_likelihoods)
+        grads_t = ((sum_preact_times_exp/sum_exp
+                    - notsb_logits_trueclass)/\
+                    (float(t)**2))
+        grads_b = labels - (exp_tsb_logits/(sum_exp[:,None]))
+        #multiply by -1 because we care about *negative* log likelihood
+        mean_grad_t = -np.mean(grads_t)
+        mean_grads_b = -np.mean(grads_b, axis=0)
+        #only supply the gradients for the bias positions that
+        # we are allowed to optimize for
+        mean_grads_b_masked = []
+        for bias_pos_idx, bias_pos in enumerate(bias_positions):
+            mean_grads_b_masked.append(mean_grads_b[bias_pos])
+        return nll, np.array([mean_grad_t]+mean_grads_b_masked)
+
+    if (verbose):
+        original_nll = compute_nll(labels=labels, preacts=preacts,
+                                   t=1.0, bs=np.zeros(labels.shape[1]))
+        print("Original NLL is: ",original_nll)
+        
+    optimization_result = scipy.optimize.minimize(
+                              fun=eval_func,
+                              #fun=lambda x: eval_func(x)[0],
+                              x0=np.array([1.0]+[0.0 for x in
+                                                 bias_positions]),
+                              bounds=[(0,None)]+[(None,None) for x in
+                                                 bias_positions],
+                              jac=True,
+                              method='L-BFGS-B',
+                              tol=1e-07,
+                              **lbfgs_kwargs)
+    if (verbose):
+        print(optimization_result)
+    biases = np.zeros(labels.shape[1])
+    if (hasattr(optimization_result.x, '__iter__')):
+        optimal_t = optimization_result.x[0]
+        for bias_pos_idx,bias_pos in enumerate(bias_positions):
+           biases[bias_pos] = optimization_result.x[1+bias_pos_idx] 
+        final_nll = compute_nll(labels=labels, preacts=preacts,
+                                t=optimal_t, bs=biases)
+    else:
+        optimal_t = optimization_result.x
+        final_nll = compute_nll(labels=labels, preacts=preacts,
+                                t=optimal_t, bs=np.zeros(labels.shape[1]))
+    if (verbose):
+        print("Final NLL & grad is: ",final_nll)
+
+    return (optimal_t, biases)
+
+
 class TempScaling(CalibratorFactory):
 
     def __init__(self, ece_bins=15, lbfgs_kwargs={}, verbose=False,
@@ -112,89 +193,24 @@ class TempScaling(CalibratorFactory):
         #the subset of bias positions that we are allowed to optimize for
         self.bias_positions = bias_positions
 
+    def _get_optimal_t_and_biases(self, valid_preacts, valid_labels):
+        (optimal_t, biases) = do_tempscale_optimization(
+            labels=valid_labels,
+            preacts=valid_preacts,
+            bias_positions=self.bias_positions,
+            verbose=self.verbose,
+            lbfgs_kwargs=self.lbfgs_kwargs)
+        return (optimal_t, biases)
+
     def __call__(self, valid_preacts, valid_labels, posterior_supplied=False):
 
         if (posterior_supplied):
             valid_preacts = inverse_softmax(valid_preacts)
         assert np.max(np.sum(valid_labels,axis=1)==1.0)
 
-        #calculate the temperature scaling parameter
-        def eval_func(x):
-            t = x[0]
-            bs = np.zeros(valid_labels.shape[1])
-            for bias_pos_idx, bias_pos in enumerate(self.bias_positions):
-                bs[bias_pos] = x[1+bias_pos_idx] 
-            #tsb = temp_scaled_biased
-            tsb_valid_preacts = valid_preacts/float(t) + bs[None,:]
-            log_sum_exp = scipy.misc.logsumexp(a = tsb_valid_preacts,axis=1) 
-
-            exp_tsb_logits = np.exp(tsb_valid_preacts)
-            sum_exp = np.sum(exp_tsb_logits, axis=1)
-            sum_preact_times_exp = np.sum(valid_preacts*
-                                          exp_tsb_logits, axis=1)
-
-            notsb_logits_trueclass =\
-                np.sum(valid_preacts*valid_labels, axis=1)
-            tsb_logits_trueclass =\
-                np.sum(tsb_valid_preacts*valid_labels, axis=1)
-            
-            log_likelihoods = tsb_logits_trueclass - log_sum_exp
-            nll = -np.mean(log_likelihoods)
-            grads_t = ((sum_preact_times_exp/sum_exp
-                        - notsb_logits_trueclass)/\
-                        (float(t)**2))
-            grads_b = valid_labels - (exp_tsb_logits/(sum_exp[:,None]))
-            #multiply by -1 because we care about *negative* log likelihood
-            mean_grad_t = -np.mean(grads_t)
-            mean_grads_b = -np.mean(grads_b, axis=0)
-            #only supply the gradients for the bias positions that
-            # we are allowed to optimize for
-            mean_grads_b_masked = []
-            for bias_pos_idx, bias_pos in enumerate(self.bias_positions):
-                mean_grads_b_masked.append(mean_grads_b[bias_pos])
-            return nll, np.array([mean_grad_t]+mean_grads_b_masked)
-
-        if (self.verbose):
-            original_nll = eval_func(np.array([1.0]+[0.0 for x in
-                                                     self.bias_positions])) 
-            original_ece = compute_ece(
-                softmax_out=softmax(preact=valid_preacts,
-                                    temp=1.0, biases=None),
-                labels=valid_labels, bins=self.ece_bins) 
-            print("Original NLL & grad is: ",original_nll)
-            print("Original ECE is: ",original_ece)
-            
-        optimization_result = scipy.optimize.minimize(
-                                  fun=eval_func,
-                                  #fun=lambda x: eval_func(x)[0],
-                                  x0=np.array([1.0]+[0.0 for x in
-                                                     self.bias_positions]),
-                                  bounds=[(0,None)]+[(None,None) for x in
-                                                     self.bias_positions],
-                                  jac=True,
-                                  #jac=False,
-                                  method='L-BFGS-B',
-                                  tol=1e-07,
-                                  **self.lbfgs_kwargs)
-        if (self.verbose):
-            print(optimization_result)
-        biases = np.zeros(valid_labels.shape[1])
-        if (hasattr(optimization_result.x, '__iter__')):
-            optimal_t = optimization_result.x[0]
-            for bias_pos_idx,bias_pos in enumerate(self.bias_positions):
-               biases[bias_pos] = optimization_result.x[1+bias_pos_idx] 
-            final_nll = eval_func(np.array(optimization_result.x)) 
-        else:
-            optimal_t = optimization_result.x
-            final_nll = eval_func(np.array([optimal_t])) 
-
-        if (self.verbose):
-            final_ece = compute_ece(
-                softmax_out=softmax(preact=valid_preacts,
-                                    temp=optimal_t, biases=biases),
-                labels=valid_labels, bins=self.ece_bins) 
-            print("Final NLL & grad is: ",final_nll)
-            print("Final ECE is: ",final_ece)
+        (optimal_t, biases) = self._get_optimal_t_and_biases(
+            valid_preacts=valid_preacts,
+            valid_labels=valid_labels)
 
         return (lambda preact: softmax(preact=(inverse_softmax(preact)
                                                if posterior_supplied else
@@ -202,6 +218,125 @@ class TempScaling(CalibratorFactory):
                                        temp=optimal_t,
                                        biases=biases))
 
+
+class CrossValidatedBCTS(TempScaling):
+
+    def __init__(self, num_crossvalidation_splits=5, lbfgs_kwargs={},
+                       verbose=False, max_num_bias=None):
+        self.num_crossvalidation_splits = num_crossvalidation_splits
+        self.lbfgs_kwargs = lbfgs_kwargs
+        self.verbose = verbose
+        self.max_num_bias = max_num_bias
+
+    def _get_optimal_t_and_biases(self, valid_preacts, valid_labels):
+        
+        heldout_nll_histories = []
+        for split_num in range(self.num_crossvalidation_splits):
+
+            if (self.verbose):
+                print("Split number",split_num)
+
+            #get the CV split
+            training_preacts = []
+            training_labels = []
+            cv_heldout_preacts = []
+            cv_heldout_labels = [] 
+            for idx in range(len(valid_preacts)):
+                if (idx%self.num_crossvalidation_splits == 0):
+                    cv_heldout_preacts.append(valid_preacts[idx]) 
+                    cv_heldout_labels.append(valid_labels[idx])
+                else:
+                    training_preacts.append(valid_preacts[idx]) 
+                    training_labels.append(valid_labels[idx])
+            training_preacts = np.array(training_preacts) 
+            training_labels = np.array(training_labels)
+            cv_heldout_preacts = np.array(cv_heldout_preacts)
+            cv_heldout_labels = np.array(cv_heldout_labels)
+
+            (_, _, _, biasdiff_history, heldout_nll_history) =\
+                 increase_num_bias_terms_and_fit_sequentially(
+                   preacts=training_preacts,
+                   labels=training_labels,
+                   total_num_biases=self.max_num_bias,
+                   verbose=self.verbose,
+                   lbfgs_kwargs=self.lbfgs_kwargs,
+                   heldout_preacts=cv_heldout_preacts,
+                   heldout_labels=cv_heldout_labels)
+            heldout_nll_histories.append(heldout_nll_history)
+
+            if (self.verbose):
+                print("Bias diff history", biasdiff_history)
+                print("Heldout nll history", heldout_nll_history)
+
+        avgacrosssplits_heldout_nll_history =\
+            np.mean(np.array(heldout_nll_histories), axis=0) 
+
+        if (self.verbose):
+            print("Avg heldout nll history",
+                  avgacrosssplits_heldout_nll_history)
+        
+        best_numbias = np.argmax(avgacrosssplits_heldout_nll_history)
+        if (self.verbose):
+            print("Based numbias", best_numbias)
+        (optimal_t, biases, bias_positions,
+         biasdiff_history, _) = increase_num_bias_terms_and_fit_sequentially(
+                   preacts=valid_preacts,
+                   labels=valid_labels,
+                   total_num_biases=best_numbias,
+                   verbose=self.verbose,
+                   lbfgs_kwargs=self.lbfgs_kwargs)
+        return (optimal_t, biases)
+
+
+def increase_num_bias_terms_and_fit_sequentially(
+        preacts, labels, total_num_biases,
+        verbose, lbfgs_kwargs, heldout_preacts=None, heldout_labels=None): 
+
+    if (total_num_biases is None):
+        total_num_biases = preacts.shape[1]
+
+    if (heldout_preacts is not None):
+        assert heldout_labels is not None
+        heldout_nll_history = []
+    else:
+        heldout_nll_history = None
+
+    biasdiff_history = []
+    bias_positions = []
+    for num_biases in range(total_num_biases+1):
+        if (verbose):
+            print("On bias #",num_biases)
+        (optimal_t, biases) = do_tempscale_optimization(
+            labels=labels,
+            preacts=preacts,
+            bias_positions=bias_positions,
+            verbose=verbose,
+            lbfgs_kwargs=lbfgs_kwargs)
+        if (heldout_preacts is not None):
+            heldout_nll = compute_nll(labels=heldout_labels,
+                                      preacts=heldout_preacts,
+                                      t=optimal_t, bs=biases)
+            heldout_nll_history.append(heldout_nll)
+        if (num_biases < total_num_biases):
+            #determine which position has the biggest remaining bias from
+            # *training* set, add that position to bias_positions
+            # for the next round
+            postsoftmax_preds = softmax(preact=preacts,
+                                        temp=optimal_t, biases=biases)
+            abs_bias_diff = np.abs(np.mean(postsoftmax_preds, axis=0)
+                                   -np.mean(labels, axis=0))
+            max_abs_bias_diff = np.max(abs_bias_diff)
+            biasdiff_history.append(max_abs_bias_diff)
+            #of the positions that have not been bias-corrected, figure out
+            #which one has the largest bias; include that in bias_positions
+            biaspos_and_biasdiff = [x for x in enumerate(bias_diff) if
+                                    x[0] not in bias_positions]
+            next_bias_pos,_ = max(index_and_biasdiff, key=lambda x: x[1]) 
+            bias_positions.append(next_bias_pos) 
+
+    return (optimal_t, biases, bias_positions,
+            biasdiff_history, heldout_nll_history)
+        
 
 class Expit(CalibratorFactory):
 
