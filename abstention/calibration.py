@@ -230,7 +230,7 @@ class CrossValidatedBCTS(TempScaling):
 
     def _get_optimal_t_and_biases(self, valid_preacts, valid_labels):
         
-        heldout_nll_histories = []
+        heldout_biasdiff_histories = []
         for split_num in range(self.num_crossvalidation_splits):
 
             if (self.verbose):
@@ -254,7 +254,8 @@ class CrossValidatedBCTS(TempScaling):
             cv_heldout_labels = np.array(cv_heldout_labels)
 
             (_t, _biases, _bias_positions,
-             biasdiff_history, heldout_nll_history) =\
+             biasdiff_history, heldout_nll_history,
+             heldout_biasdiff_history) =\
                  increase_num_bias_terms_and_fit_sequentially(
                    preacts=training_preacts,
                    labels=training_labels,
@@ -263,20 +264,20 @@ class CrossValidatedBCTS(TempScaling):
                    lbfgs_kwargs=self.lbfgs_kwargs,
                    heldout_preacts=cv_heldout_preacts,
                    heldout_labels=cv_heldout_labels)
-            heldout_nll_histories.append(heldout_nll_history)
+            heldout_biasdiff_histories.append(heldout_biasdiff_history)
 
             if (self.verbose):
                 print("Bias diff history", biasdiff_history)
-                print("Heldout nll history", heldout_nll_history)
+                print("Heldout biasdiff history", heldout_biasdiff_history)
 
-        avgacrosssplits_heldout_nll_history =\
-            np.mean(np.array(heldout_nll_histories), axis=0) 
+        avgacrosssplits_heldout_biasdiff_history =\
+            np.mean(np.array(heldout_biasdiff_histories), axis=0) 
 
         if (self.verbose):
-            print("Avg heldout nll history",
-                  avgacrosssplits_heldout_nll_history)
+            print("Avg heldout biasdiff history",
+                  avgacrosssplits_heldout_biasdiff_history)
         
-        best_numbias = np.argmin(avgacrosssplits_heldout_nll_history)
+        best_numbias = np.argmin(avgacrosssplits_heldout_biasdiff_history)
         if (self.verbose):
             print("Best numbias", best_numbias)
         (optimal_t, biases, bias_positions,
@@ -299,8 +300,10 @@ def increase_num_bias_terms_and_fit_sequentially(
     if (heldout_preacts is not None):
         assert heldout_labels is not None
         heldout_nll_history = []
+        heldout_biasdiff_history = []
     else:
         heldout_nll_history = None
+        heldout_biasdiff_history = None
 
     biasdiff_history = []
     bias_positions = []
@@ -318,6 +321,11 @@ def increase_num_bias_terms_and_fit_sequentially(
                                       preacts=heldout_preacts,
                                       t=optimal_t, bs=biases)
             heldout_nll_history.append(heldout_nll)
+            heldout_postsoftmax_preds = softmax(preact=heldout_preacts,
+                                                temp=optimal_t, biases=biases)
+            heldout_biasdiff_history.append(
+                np.max(np.abs(np.mean(postsoftmax_preds, axis=0)
+                              -np.mean(labels, axis=0))))
         if (num_biases < total_num_biases):
             #determine which position has the biggest remaining bias from
             # *training* set, add that position to bias_positions
@@ -336,7 +344,7 @@ def increase_num_bias_terms_and_fit_sequentially(
             bias_positions.append(next_bias_pos) 
 
     return (optimal_t, biases, bias_positions,
-            biasdiff_history, heldout_nll_history)
+            biasdiff_history, heldout_nll_history, heldout_biasdiff_history)
         
 
 class Expit(CalibratorFactory):
