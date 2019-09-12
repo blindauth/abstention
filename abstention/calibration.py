@@ -324,8 +324,8 @@ def increase_num_bias_terms_and_fit_sequentially(
             heldout_postsoftmax_preds = softmax(preact=heldout_preacts,
                                                 temp=optimal_t, biases=biases)
             heldout_biasdiff_history.append(
-                np.max(np.abs(np.mean(postsoftmax_preds, axis=0)
-                              -np.mean(labels, axis=0))))
+                np.max(np.abs(np.mean(heldout_postsoftmax_preds, axis=0)
+                              -np.mean(heldout_labels, axis=0))))
         if (num_biases < total_num_biases):
             #determine which position has the biggest remaining bias from
             # *training* set, add that position to bias_positions
