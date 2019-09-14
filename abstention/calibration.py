@@ -302,7 +302,7 @@ class CrossValidatedBCTS(TempScaling):
             preacts=valid_preacts,
             bias_positions=sorted_bias_indices[:best_numbias],
             verbose=False,
-            lbfgs_kwargs=lbfgs_kwargs) 
+            lbfgs_kwargs=self.lbfgs_kwargs) 
 
         return (optimal_t, biases)
 
