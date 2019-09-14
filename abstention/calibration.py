@@ -254,22 +254,37 @@ class CrossValidatedBCTS(TempScaling):
             cv_heldout_preacts = np.array(cv_heldout_preacts)
             cv_heldout_labels = np.array(cv_heldout_labels)
 
-            (_t, _biases, _bias_positions,
-             biasdiff_history, heldout_nll_history,
-             heldout_biasdiff_history) =\
-                 increase_num_bias_terms_and_fit_sequentially(
-                   preacts=training_preacts,
-                   labels=training_labels,
-                   total_num_biases=self.max_num_bias,
-                   verbose=self.verbose,
-                   lbfgs_kwargs=self.lbfgs_kwargs,
-                   heldout_preacts=cv_heldout_preacts,
-                   heldout_labels=cv_heldout_labels)
-            heldout_biasdiff_histories.append(heldout_biasdiff_history)
+            #fit with all bias terms
+            (_, biases_allallowed) = do_tempscale_optimization(
+                labels=training_labels,
+                preacts=training_preacts,
+                bias_positions=np.arange(training_labels.shape[1]),
+                verbose=False,
+                lbfgs_kwargs=lbfgs_kwargs)
+            sorted_bias_indices = [x[0] for x in
+                sorted(enumerate(np.abs(biases_allallowed)),
+                       key=lambda x: -x[1])]
 
+            heldout_biasdiff_history = []
+            for numbias in range(training_labels.shape[1]+1):
+                (_t, _biases) = do_tempscale_optimization(
+                    labels=training_labels,
+                    preacts=training_preacts,
+                    bias_positions=sorted_bias_indices[:numbias],
+                    verbose=False,
+                    lbfgs_kwargs=lbfgs_kwargs) 
+                heldout_postsoftmax_preds = softmax(
+                    preact=cv_heldout_preacts, temp=_t, biases=_biases)
+                #heldout_biasdiff_history.append(
+                #    np.max(np.abs(np.mean(heldout_postsoftmax_preds, axis=0)
+                #                  -np.mean(cv_heldout_labels, axis=0))))
+                heldout_biasdiff_history.append(
+                    scipy.spatial.distance.jensenshannon(
+                     p=np.mean(heldout_postsoftmax_preds, axis=0),
+                     q=np.mean(cv_heldout_labels, axis=0)))
             if (self.verbose):
-                print("Bias diff history", biasdiff_history)
                 print("Heldout biasdiff history", heldout_biasdiff_history)
+            heldout_biasdiff_histories.append(heldout_biasdiff_history)
 
         avgacrosssplits_heldout_biasdiff_history =\
             np.mean(np.array(heldout_biasdiff_histories), axis=0) 
@@ -281,13 +296,14 @@ class CrossValidatedBCTS(TempScaling):
         best_numbias = np.argmin(avgacrosssplits_heldout_biasdiff_history)
         if (self.verbose):
             print("Best numbias", best_numbias)
-        (optimal_t, biases, bias_positions,
-         biasdiff_history, _, _) = increase_num_bias_terms_and_fit_sequentially(
-                   preacts=valid_preacts,
-                   labels=valid_labels,
-                   total_num_biases=best_numbias,
-                   verbose=self.verbose,
-                   lbfgs_kwargs=self.lbfgs_kwargs)
+
+        (optimal_t, biases) = do_tempscale_optimization(
+            labels=valid_labels,
+            preacts=valid_preacts,
+            bias_positions=sorted_bias_indices[:best_numbias],
+            verbose=False,
+            lbfgs_kwargs=lbfgs_kwargs) 
+
         return (optimal_t, biases)
 
 
