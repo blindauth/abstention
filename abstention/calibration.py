@@ -260,7 +260,7 @@ class CrossValidatedBCTS(TempScaling):
                 preacts=training_preacts,
                 bias_positions=np.arange(training_labels.shape[1]),
                 verbose=False,
-                lbfgs_kwargs=lbfgs_kwargs)
+                lbfgs_kwargs=self.lbfgs_kwargs)
             sorted_bias_indices = [x[0] for x in
                 sorted(enumerate(np.abs(biases_allallowed)),
                        key=lambda x: -x[1])]
@@ -272,7 +272,7 @@ class CrossValidatedBCTS(TempScaling):
                     preacts=training_preacts,
                     bias_positions=sorted_bias_indices[:numbias],
                     verbose=False,
-                    lbfgs_kwargs=lbfgs_kwargs) 
+                    lbfgs_kwargs=self.lbfgs_kwargs) 
                 heldout_postsoftmax_preds = softmax(
                     preact=cv_heldout_preacts, temp=_t, biases=_biases)
                 #heldout_biasdiff_history.append(
