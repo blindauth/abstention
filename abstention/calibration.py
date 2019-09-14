@@ -253,8 +253,6 @@ class CrossValidatedBCTS(TempScaling):
             training_labels = np.array(training_labels)
             cv_heldout_preacts = np.array(cv_heldout_preacts)
             cv_heldout_labels = np.array(cv_heldout_labels)
-            print(cv_heldout_labels.shape)
-            print(training_labels.shape)
 
             #fit with all bias terms
             (_, biases_allallowed) = do_tempscale_optimization(
