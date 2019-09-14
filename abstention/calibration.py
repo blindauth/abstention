@@ -297,6 +297,16 @@ class CrossValidatedBCTS(TempScaling):
         if (self.verbose):
             print("Best numbias", best_numbias)
 
+        #fit with all bias terms
+        (_, biases_allallowed_fullset) = do_tempscale_optimization(
+            labels=valid_labels,
+            preacts=valid_preacts,
+            bias_positions=np.arange(valid_labels.shape[1]),
+            verbose=False,
+            lbfgs_kwargs=self.lbfgs_kwargs)
+        sorted_bias_indices = [x[0] for x in
+            sorted(enumerate(np.abs(biases_allallowed_fullset)),
+                   key=lambda x: -x[1])]
         (optimal_t, biases) = do_tempscale_optimization(
             labels=valid_labels,
             preacts=valid_preacts,
