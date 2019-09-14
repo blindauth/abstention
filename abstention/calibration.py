@@ -222,7 +222,7 @@ class TempScaling(CalibratorFactory):
 
 class CrossValidatedBCTS(TempScaling):
 
-    def __init__(self, num_crossvalidation_splits=5, lbfgs_kwargs={},
+    def __init__(self, num_crossvalidation_splits=20, lbfgs_kwargs={},
                        verbose=False, max_num_bias=None):
         self.num_crossvalidation_splits = num_crossvalidation_splits
         self.lbfgs_kwargs = lbfgs_kwargs
@@ -253,6 +253,8 @@ class CrossValidatedBCTS(TempScaling):
             training_labels = np.array(training_labels)
             cv_heldout_preacts = np.array(cv_heldout_preacts)
             cv_heldout_labels = np.array(cv_heldout_labels)
+            print(cv_heldout_labels.shape)
+            print(training_labels.shape)
 
             #fit with all bias terms
             (_, biases_allallowed) = do_tempscale_optimization(
@@ -282,8 +284,8 @@ class CrossValidatedBCTS(TempScaling):
                     scipy.spatial.distance.jensenshannon(
                      p=np.mean(heldout_postsoftmax_preds, axis=0),
                      q=np.mean(cv_heldout_labels, axis=0)))
-            if (self.verbose):
-                print("Heldout biasdiff history", heldout_biasdiff_history)
+            #if (self.verbose):
+            #    print("Heldout biasdiff history", heldout_biasdiff_history)
             heldout_biasdiff_histories.append(heldout_biasdiff_history)
 
         avgacrosssplits_heldout_biasdiff_history =\
