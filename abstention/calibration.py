@@ -282,16 +282,15 @@ class TempScaling(CalibratorFactory):
 class CrossValidatedBCTS(TempScaling):
 
     def __init__(self, num_crossvalidation_splits=10,
-                       frac_to_split_with=0.5,
-                       seed=1234,
+                       #frac_to_split_with=0.5,
+                       #seed=1234,
                        betas_to_try=[0.0, 1e-7, 1e-6, 1e-5,
                                      1e-4, 1e-3, 1e-2, 1e-1], 
                        lbfgs_kwargs={},
                        verbose=False, max_num_bias=None):
-        #monte-carlo cross validation
         self.num_crossvalidation_splits = num_crossvalidation_splits
-        self.frac_to_split_with = frac_to_split_with
-        self.rng = np.random.RandomState(seed)
+        #self.frac_to_split_with = frac_to_split_with
+        #self.rng = np.random.RandomState(seed)
         self.betas_to_try = betas_to_try
         self.lbfgs_kwargs = lbfgs_kwargs
         self.verbose = verbose
@@ -307,7 +306,7 @@ class CrossValidatedBCTS(TempScaling):
             cv_heldout_preacts = []
             cv_heldout_labels = [] 
             for idx in range(len(valid_preacts)):
-                if self.rng.uniform() < self.frac_to_split_with:
+                if ((idx%self.num_crossvalidation_splits)==split_num):
                     cv_heldout_preacts.append(valid_preacts[idx]) 
                     cv_heldout_labels.append(valid_labels[idx])
                 else:
