@@ -140,7 +140,7 @@ def do_regularized_tempscale_optimization(labels, preacts, beta, verbose,
         #multiply by -1 because we care about *negative* log likelihood
         mean_grad_t = -np.mean(grads_t)
         mean_grads_b = (-np.mean(grads_b, axis=0)
-                        + ((bs > 0.0)*beta) - ((bs < 0.0)*beta))
+                        - ((bs > 0.0)*beta) + ((bs < 0.0)*beta))
         return objective, np.array([mean_grad_t]+list(mean_grads_b))
 
     if (verbose):
