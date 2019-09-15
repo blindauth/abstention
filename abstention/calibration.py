@@ -160,6 +160,7 @@ def do_regularized_tempscale_optimization(labels, preacts, beta, verbose,
                               tol=1e-07,
                               **lbfgs_kwargs)
     if (verbose):
+        print("Optimization Result:")
         print(optimization_result)
     optimal_t = optimization_result.x[0]
     biases = np.array(optimization_result.x[1:])
@@ -323,7 +324,7 @@ class CrossValidatedBCTS(TempScaling):
                     labels=training_labels,
                     preacts=training_preacts,
                     beta=beta,
-                    verbose=False,
+                    verbose=self.verbose,
                     lbfgs_kwargs=self.lbfgs_kwargs) 
                 heldout_postsoftmax_preds = softmax(
                     preact=cv_heldout_preacts, temp=_t, biases=_biases)
@@ -350,7 +351,7 @@ class CrossValidatedBCTS(TempScaling):
             labels=valid_labels,
             preacts=valid_preacts,
             beta=best_beta,
-            verbose=False,
+            verbose=self.verbose,
             lbfgs_kwargs=self.lbfgs_kwargs) 
 
         return (optimal_t, biases)
