@@ -112,6 +112,65 @@ def compute_nll(labels, preacts, t, bs):
     return nll
 
 
+def do_regularized_tempscale_optimization(labels, preacts, beta, verbose,
+                                          lbfgs_kwargs):
+    #beta is the regularization parameter
+    def eval_func(x):
+        t = x[0]
+        bs = np.zeros(x[1:])
+        #tsb = temp_scaled_biased
+        tsb_preacts = preacts/float(t) + bs[None,:]
+        log_sum_exp = scipy.special.logsumexp(a=tsb_preacts, axis=1) 
+
+        exp_tsb_logits = np.exp(tsb_preacts)
+        sum_exp = np.sum(exp_tsb_logits, axis=1)
+        sum_preact_times_exp = np.sum(preacts*exp_tsb_logits, axis=1)
+
+        notsb_logits_trueclass =\
+            np.sum(preacts*labels, axis=1)
+        tsb_logits_trueclass =\
+            np.sum(tsb_preacts*labels, axis=1)
+        
+        log_likelihoods = tsb_logits_trueclass - log_sum_exp
+        nll = -np.mean(log_likelihoods) + beta*np.sum(np.abs(bs))
+        grads_t = ((sum_preact_times_exp/sum_exp
+                    - notsb_logits_trueclass)/\
+                    (float(t)**2))
+        grads_b = labels - (exp_tsb_logits/(sum_exp[:,None]))
+        #multiply by -1 because we care about *negative* log likelihood
+        mean_grad_t = -np.mean(grads_t)
+        mean_grads_b = (-np.mean(grads_b, axis=0)
+                        + ((bs > 0.0)*beta) - ((bs < 0.0)*beta))
+        return nll, np.array([mean_grad_t]+list(mean_grads_b))
+
+    if (verbose):
+        original_nll = compute_nll(labels=labels, preacts=preacts,
+                                   t=1.0, bs=np.zeros(labels.shape[1]))
+        print("Original NLL is: ",original_nll)
+        
+    optimization_result = scipy.optimize.minimize(
+                              fun=eval_func,
+                              #fun=lambda x: eval_func(x)[0],
+                              x0=np.array([1.0]+[0.0 for x in
+                                                 range(labels.shape[1])]),
+                              bounds=[(0,None)]+[(None,None) for x in
+                                                 range(labels.shape[1])],
+                              jac=True,
+                              method='L-BFGS-B',
+                              tol=1e-07,
+                              **lbfgs_kwargs)
+    if (verbose):
+        print(optimization_result)
+    optimal_t = optimization_result.x[0]
+    biases = np.array(optimization_result.x[1:])
+    final_nll = compute_nll(labels=labels, preacts=preacts,
+                            t=optimal_t, bs=biases)
+    if (verbose):
+        print("Final NLL & grad is: ",final_nll)
+
+    return (optimal_t, biases)
+
+
 def do_tempscale_optimization(labels, preacts, bias_positions, verbose,
                               lbfgs_kwargs):
       
@@ -222,16 +281,20 @@ class TempScaling(CalibratorFactory):
 
 class CrossValidatedBCTS(TempScaling):
 
-    def __init__(self, num_crossvalidation_splits=20, lbfgs_kwargs={},
+    def __init__(self, num_crossvalidation_splits=10,
+                       betas_to_try=[0.0, 1e-7, 1e-6, 1e-5,
+                                     1e-4, 1e-3, 1e-2, 1e-1] 
+                       lbfgs_kwargs={},
                        verbose=False, max_num_bias=None):
         self.num_crossvalidation_splits = num_crossvalidation_splits
+        self.betas_to_try = betas_to_try
         self.lbfgs_kwargs = lbfgs_kwargs
         self.verbose = verbose
         self.max_num_bias = max_num_bias
 
     def _get_optimal_t_and_biases(self, valid_preacts, valid_labels):
         
-        heldout_biasdiff_histories = []
+        heldout_biasdiffs_at_different_betas = []
         for split_num in range(self.num_crossvalidation_splits):
 
             if (self.verbose):
@@ -254,63 +317,39 @@ class CrossValidatedBCTS(TempScaling):
             cv_heldout_preacts = np.array(cv_heldout_preacts)
             cv_heldout_labels = np.array(cv_heldout_labels)
 
-            #fit with all bias terms
-            (_, biases_allallowed) = do_tempscale_optimization(
-                labels=training_labels,
-                preacts=training_preacts,
-                bias_positions=np.arange(training_labels.shape[1]),
-                verbose=False,
-                lbfgs_kwargs=self.lbfgs_kwargs)
-            sorted_bias_indices = [x[0] for x in
-                sorted(enumerate(np.abs(biases_allallowed)),
-                       key=lambda x: -x[1])]
-
-            heldout_biasdiff_history = []
-            for numbias in range(training_labels.shape[1]+1):
-                (_t, _biases) = do_tempscale_optimization(
+            thissplit_heldout_biasdiff_at_different_betas = []
+            for beta in self.betas_to_try:
+                (_t, _biases) = do_regularized_tempscale_optimization(
                     labels=training_labels,
                     preacts=training_preacts,
-                    bias_positions=sorted_bias_indices[:numbias],
+                    beta=beta,
                     verbose=False,
                     lbfgs_kwargs=self.lbfgs_kwargs) 
                 heldout_postsoftmax_preds = softmax(
                     preact=cv_heldout_preacts, temp=_t, biases=_biases)
-                #heldout_biasdiff_history.append(
-                #    np.max(np.abs(np.mean(heldout_postsoftmax_preds, axis=0)
-                #                  -np.mean(cv_heldout_labels, axis=0))))
-                heldout_biasdiff_history.append(
+                thissplit_heldout_biasdiff_at_different_betas.append(
                     scipy.spatial.distance.jensenshannon(
                      p=np.mean(heldout_postsoftmax_preds, axis=0),
                      q=np.mean(cv_heldout_labels, axis=0)))
-            #if (self.verbose):
-            #    print("Heldout biasdiff history", heldout_biasdiff_history)
-            heldout_biasdiff_histories.append(heldout_biasdiff_history)
+            heldout_biasdiffs_at_different_betas.append(
+                thissplit_heldout_biasdiff_at_different_betas)
 
-        avgacrosssplits_heldout_biasdiff_history =\
-            np.mean(np.array(heldout_biasdiff_histories), axis=0) 
+        avgacrosssplits_heldout_biasdiffs_at_different_betas = (
+            np.mean(np.array(heldout_biasdiffs_at_different_betas), axis=0)) 
 
         if (self.verbose):
             print("Avg heldout biasdiff history",
-                  avgacrosssplits_heldout_biasdiff_history)
+                  avgacrosssplits_heldout_biasdiffs_at_different_betas)
         
-        best_numbias = np.argmin(avgacrosssplits_heldout_biasdiff_history)
+        best_beta = self.betas_to_try[np.argmin(
+            avgacrosssplits_heldout_biasdiffs_at_different_betas)]
         if (self.verbose):
-            print("Best numbias", best_numbias)
+            print("Best beta", best_beta)
 
-        #fit with all bias terms
-        (_, biases_allallowed_fullset) = do_tempscale_optimization(
+        (optimal_t, biases) = do_regularized_tempscale_optimization(
             labels=valid_labels,
             preacts=valid_preacts,
-            bias_positions=np.arange(valid_labels.shape[1]),
-            verbose=False,
-            lbfgs_kwargs=self.lbfgs_kwargs)
-        sorted_bias_indices = [x[0] for x in
-            sorted(enumerate(np.abs(biases_allallowed_fullset)),
-                   key=lambda x: -x[1])]
-        (optimal_t, biases) = do_tempscale_optimization(
-            labels=valid_labels,
-            preacts=valid_preacts,
-            bias_positions=sorted_bias_indices[:best_numbias],
+            bias_positions=best_beta,
             verbose=False,
             lbfgs_kwargs=self.lbfgs_kwargs) 
 
