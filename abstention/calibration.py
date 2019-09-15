@@ -117,7 +117,7 @@ def do_regularized_tempscale_optimization(labels, preacts, beta, verbose,
     #beta is the regularization parameter
     def eval_func(x):
         t = x[0]
-        bs = np.zeros(x[1:])
+        bs = np.array(x[1:])
         #tsb = temp_scaled_biased
         tsb_preacts = preacts/float(t) + bs[None,:]
         log_sum_exp = scipy.special.logsumexp(a=tsb_preacts, axis=1) 
@@ -132,7 +132,7 @@ def do_regularized_tempscale_optimization(labels, preacts, beta, verbose,
             np.sum(tsb_preacts*labels, axis=1)
         
         log_likelihoods = tsb_logits_trueclass - log_sum_exp
-        nll = -np.mean(log_likelihoods) + beta*np.sum(np.abs(bs))
+        objective = -np.mean(log_likelihoods) + beta*np.sum(np.abs(bs))
         grads_t = ((sum_preact_times_exp/sum_exp
                     - notsb_logits_trueclass)/\
                     (float(t)**2))
@@ -141,7 +141,7 @@ def do_regularized_tempscale_optimization(labels, preacts, beta, verbose,
         mean_grad_t = -np.mean(grads_t)
         mean_grads_b = (-np.mean(grads_b, axis=0)
                         + ((bs > 0.0)*beta) - ((bs < 0.0)*beta))
-        return nll, np.array([mean_grad_t]+list(mean_grads_b))
+        return objective, np.array([mean_grad_t]+list(mean_grads_b))
 
     if (verbose):
         original_nll = compute_nll(labels=labels, preacts=preacts,
