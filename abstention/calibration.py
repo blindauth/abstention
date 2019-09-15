@@ -283,7 +283,7 @@ class CrossValidatedBCTS(TempScaling):
 
     def __init__(self, num_crossvalidation_splits=10,
                        betas_to_try=[0.0, 1e-7, 1e-6, 1e-5,
-                                     1e-4, 1e-3, 1e-2, 1e-1] 
+                                     1e-4, 1e-3, 1e-2, 1e-1], 
                        lbfgs_kwargs={},
                        verbose=False, max_num_bias=None):
         self.num_crossvalidation_splits = num_crossvalidation_splits
