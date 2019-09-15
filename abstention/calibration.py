@@ -132,15 +132,14 @@ def do_regularized_tempscale_optimization(labels, preacts, beta, verbose,
             np.sum(tsb_preacts*labels, axis=1)
         
         log_likelihoods = tsb_logits_trueclass - log_sum_exp
-        objective = -np.mean(log_likelihoods) + beta*np.sum(np.abs(bs))
+        objective = -np.mean(log_likelihoods) + beta*np.sum(np.square(bs))
         grads_t = ((sum_preact_times_exp/sum_exp
                     - notsb_logits_trueclass)/\
                     (float(t)**2))
         grads_b = labels - (exp_tsb_logits/(sum_exp[:,None]))
         #multiply by -1 because we care about *negative* log likelihood
         mean_grad_t = -np.mean(grads_t)
-        mean_grads_b = (-np.mean(grads_b, axis=0)
-                        - ((bs > 0.0)*beta) + ((bs < 0.0)*beta))
+        mean_grads_b = ((-np.mean(grads_b, axis=0)) + (2*bs*beta))
         return objective, np.array([mean_grad_t]+list(mean_grads_b))
 
     if (verbose):
