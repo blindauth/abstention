@@ -297,9 +297,6 @@ class CrossValidatedBCTS(TempScaling):
         heldout_biasdiffs_at_different_betas = []
         for split_num in range(self.num_crossvalidation_splits):
 
-            if (self.verbose):
-                print("Split number",split_num)
-
             #get the CV split
             training_preacts = []
             training_labels = []
@@ -323,7 +320,7 @@ class CrossValidatedBCTS(TempScaling):
                     labels=training_labels,
                     preacts=training_preacts,
                     beta=beta,
-                    verbose=self.verbose,
+                    verbose=False,
                     lbfgs_kwargs=self.lbfgs_kwargs) 
                 heldout_postsoftmax_preds = softmax(
                     preact=cv_heldout_preacts, temp=_t, biases=_biases)
@@ -350,7 +347,7 @@ class CrossValidatedBCTS(TempScaling):
             labels=valid_labels,
             preacts=valid_preacts,
             beta=best_beta,
-            verbose=self.verbose,
+            verbose=False,
             lbfgs_kwargs=self.lbfgs_kwargs) 
 
         return (optimal_t, biases)
