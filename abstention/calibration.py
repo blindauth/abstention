@@ -349,7 +349,7 @@ class CrossValidatedBCTS(TempScaling):
         (optimal_t, biases) = do_regularized_tempscale_optimization(
             labels=valid_labels,
             preacts=valid_preacts,
-            bias_positions=best_beta,
+            beta=best_beta,
             verbose=False,
             lbfgs_kwargs=self.lbfgs_kwargs) 
 
