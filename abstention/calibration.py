@@ -307,7 +307,7 @@ class CrossValidatedBCTS(TempScaling):
             cv_heldout_preacts = []
             cv_heldout_labels = [] 
             for idx in range(len(valid_preacts)):
-                if self.rng.random() < self.frac_to_split_with:
+                if self.rng.uniform() < self.frac_to_split_with:
                     cv_heldout_preacts.append(valid_preacts[idx]) 
                     cv_heldout_labels.append(valid_labels[idx])
                 else:
