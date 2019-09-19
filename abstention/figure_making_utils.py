@@ -16,14 +16,16 @@ def wilcox_srs(vals1, vals2):
         return -np.abs(sum_positives)
 
 
-def get_ustats_mat(method_to_perfs, method_names, max_ustat=55):
+def get_ustats_mat(method_to_perfs, method_names, max_ustat=None):
     to_return = np.zeros((len(method_names), len(method_names)))
     for i in range(len(method_names)):
         for j in range(len(method_names)):
             vals1 = method_to_perfs[method_names[i]]  
             vals2 = method_to_perfs[method_names[j]]
             if (np.sum(np.abs(np.array(vals1)-np.array(vals2)))==0):
-                to_return[i,j] = max_ustat
+                if (max_ustat is None):
+                    max_ustat = (len(vals1)+1)*(len(vals2)/2.0)
+                to_return[i,j] = max_ustat 
             else:
                 to_return[i,j] = wilcox_srs(
                             vals1 = vals1,
