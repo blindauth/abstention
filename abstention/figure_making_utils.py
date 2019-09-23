@@ -39,7 +39,7 @@ def get_tied_top_and_worst_methods(ustats_mat, method_names, threshold):
                          (ustats_mat < threshold))
     num_triumphs = np.sum(masked_out_ustats, axis=-1)
     sorted_methods_and_numtriumphs = sorted(
-        zip(method_names, num_triumps),
+        zip(method_names, num_triumphs),
         key=lambda x: -x)
     top_method_name, topmethod_numtriumphs = sorted_methods_and_numtriumphs[0]
     #print("top:",top_method_name, top_method_ustats)
