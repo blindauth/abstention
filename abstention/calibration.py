@@ -182,8 +182,9 @@ def do_regularized_tempscale_optimization(labels, preacts, beta, verbose,
 
 
 def do_tempscale_optimization(labels, preacts, bias_positions, verbose,
-                              lbfgs_kwargs):
-      
+                              lbfgs_kwargs):  
+    if (bias_positions=='all'):
+        bias_positions = np.arange(labels.shape[1])
     def eval_func(x):
         t = x[0]
         bs = np.zeros(labels.shape[1])
