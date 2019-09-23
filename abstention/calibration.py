@@ -267,7 +267,7 @@ class VectorScaling(CalibratorFactory):
 
             vs_logits = preacts*ws[None,:] + bs[None,:]
             log_sum_exp = scipy.special.logsumexp(a=vs_logits, axis=1) 
-            exp_vs_logits = np.exp(vs_preacts)
+            exp_vs_logits = np.exp(vs_logits)
             sum_exp = np.sum(exp_vs_logits, axis=1)
 
             log_likelihoods = (np.sum(vs_logits*labels,axis=1)
