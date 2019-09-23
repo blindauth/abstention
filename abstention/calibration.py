@@ -253,6 +253,73 @@ def do_tempscale_optimization(labels, preacts, bias_positions, verbose,
     return (optimal_t, biases)
 
 
+class NoBiasVectorScaling(CalibratorFactory):
+
+    def __init__(self, lbfgs_kwargs={}, verbose=False):
+        self.lbfgs_kwargs = lbfgs_kwargs
+        self.verbose = verbose
+
+    def _get_optimal_ws_and_biases(self, preacts, labels):
+         
+        def eval_func(x):
+            ws = np.array(x)
+
+            vs_logits = preacts*ws[None,:]
+            log_sum_exp = scipy.special.logsumexp(a=vs_logits, axis=1) 
+            exp_vs_logits = np.exp(vs_logits)
+            sum_exp = np.sum(exp_vs_logits, axis=1)
+
+            log_likelihoods = (np.sum(vs_logits*labels,axis=1)
+                               - log_sum_exp)
+            nll = -np.mean(log_likelihoods)
+
+            grads_ws = preacts*(labels - (exp_vs_logits/sum_exp[:,None]))
+            grads_b = labels - (exp_vs_logits/sum_exp[:,None])
+
+            #multiply by -1 because we care about *negative* log likelihood
+            mean_grads_ws = -np.mean(grads_ws, axis=0)
+            mean_grads_b = -np.mean(grads_b, axis=0) 
+
+            return nll, np.array(list(mean_grads_ws)+list(mean_grads_b))
+
+        if (self.verbose):
+            original_nll = compute_nll(labels=labels, preacts=preacts,
+                                       t=1.0, bs=np.zeros(labels.shape[1]))
+            print("Original NLL is: ",original_nll)
+            
+        optimization_result = scipy.optimize.minimize(
+                      fun=eval_func,
+                      #fun=lambda x: eval_func(x)[0],
+                      x0=np.array([1.0 for x in range(preacts.shape[1])]
+                                  +[0.0 for x in range(preacts.shape[1])]),
+                      bounds=[(0,None) for x in range(preacts.shape[1])]
+                              +[(None,None) for x in range(preacts.shape[1])],
+                      jac=True,
+                      method='L-BFGS-B',
+                      tol=1e-07,
+                      **self.lbfgs_kwargs)
+        if (self.verbose):
+            print(optimization_result)
+        
+        ws = optimization_result.x 
+        return ws
+        
+    def __call__(self, valid_preacts, valid_labels,
+                       posterior_supplied=False):
+        if (posterior_supplied):
+            valid_preacts = inverse_softmax(valid_preacts)  
+        assert np.max(np.sum(valid_labels,axis=1)==1.0)
+        
+        ws = self._get_optimal_ws_and_biases(preacts=valid_preacts,
+                                             labels=valid_labels)
+        return (lambda preact: vector_scaled_softmax(
+                                    preact=(inverse_softmax(preact)
+                                            if posterior_supplied else
+                                            preact),
+                                    ws=ws,
+                                    biases=np.zeros(len(ws))))
+
+
 class VectorScaling(CalibratorFactory):
 
     def __init__(self, lbfgs_kwargs={}, verbose=False):
