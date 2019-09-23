@@ -259,7 +259,7 @@ class VectorScaling(CalibratorFactory):
         self.lbfgs_kwargs = lbfgs_kwargs
         self.verbose = verbose
 
-    def _get_optimal_ws_and_biases(preacts, labels):
+    def _get_optimal_ws_and_biases(self, preacts, labels):
          
         def eval_func(x):
             ws = np.array(x[:int(len(x)/2)])
