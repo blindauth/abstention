@@ -274,13 +274,11 @@ class NoBiasVectorScaling(CalibratorFactory):
             nll = -np.mean(log_likelihoods)
 
             grads_ws = preacts*(labels - (exp_vs_logits/sum_exp[:,None]))
-            grads_b = labels - (exp_vs_logits/sum_exp[:,None])
 
             #multiply by -1 because we care about *negative* log likelihood
             mean_grads_ws = -np.mean(grads_ws, axis=0)
-            mean_grads_b = -np.mean(grads_b, axis=0) 
 
-            return nll, np.array(list(mean_grads_ws)+list(mean_grads_b))
+            return nll, mean_grads_ws
 
         if (self.verbose):
             original_nll = compute_nll(labels=labels, preacts=preacts,
