@@ -306,22 +306,22 @@ class VectorScaling(CalibratorFactory):
         bs = optimization_result.x[preacts.shape[1]:]
         return ws, bs
         
-        def __call__(self, valid_preacts, valid_labels,
-                           posterior_supplied=False):
-            if (posterior_supplied):
-                valid_preacts = inverse_softmax(valid_preacts)  
-            assert np.max(np.sum(valid_labels,axis=1)==1.0)
-            
-            (ws, biases) = self._get_optimal_ws_and_biases(
-                                        preacts=valid_preacts,
-                                        labels=valid_labels)
+    def __call__(self, valid_preacts, valid_labels,
+                       posterior_supplied=False):
+        if (posterior_supplied):
+            valid_preacts = inverse_softmax(valid_preacts)  
+        assert np.max(np.sum(valid_labels,axis=1)==1.0)
+        
+        (ws, biases) = self._get_optimal_ws_and_biases(
+                                    preacts=valid_preacts,
+                                    labels=valid_labels)
 
-            return (lambda preact: vector_scaled_softmax(
-                                        preact=(inverse_softmax(preact)
-                                                if posterior_supplied else
-                                                preact),
-                                        ws=ws,
-                                        biases=biases))
+        return (lambda preact: vector_scaled_softmax(
+                                    preact=(inverse_softmax(preact)
+                                            if posterior_supplied else
+                                            preact),
+                                    ws=ws,
+                                    biases=biases))
 
 
 class TempScaling(CalibratorFactory):
