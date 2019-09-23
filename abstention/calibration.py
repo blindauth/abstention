@@ -289,16 +289,16 @@ class VectorScaling(CalibratorFactory):
             print("Original NLL is: ",original_nll)
             
         optimization_result = scipy.optimize.minimize(
-                              fun=eval_func,
-                              #fun=lambda x: eval_func(x)[0],
-                              x0=np.array([1.0 for x in preacts.shape[1]]
-                                          +[0.0 for x in preacts.shape[1]]),
-                              bounds=[(0,None) for x in preacts.shape[1]]
-                                      +[(None,None) for x in preacts.shape[1]],
-                              jac=True,
-                              method='L-BFGS-B',
-                              tol=1e-07,
-                              **lbfgs_kwargs)
+                      fun=eval_func,
+                      #fun=lambda x: eval_func(x)[0],
+                      x0=np.array([1.0 for x in range(preacts.shape[1])]
+                                  +[0.0 for x in range(preacts.shape[1])]),
+                      bounds=[(0,None) for x in range(preacts.shape[1])]
+                              +[(None,None) for x in range(preacts.shape[1])],
+                      jac=True,
+                      method='L-BFGS-B',
+                      tol=1e-07,
+                      **lbfgs_kwargs)
         if (self.verbose):
             print(optimization_result)
         
