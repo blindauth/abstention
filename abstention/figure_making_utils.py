@@ -40,7 +40,7 @@ def get_tied_top_and_worst_methods(ustats_mat, method_names, threshold):
     num_triumphs = np.sum(masked_out_ustats, axis=-1)
     sorted_methods_and_numtriumphs = sorted(
         zip(method_names, num_triumphs),
-        key=lambda x: -x)
+        key=lambda x: -x[1])
     top_method_name, topmethod_numtriumphs = sorted_methods_and_numtriumphs[0]
     #print("top:",top_method_name, top_method_ustats)
     tied_top_methods = [x for x,y in enumerate(num_triumphs)
