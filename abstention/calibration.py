@@ -333,7 +333,7 @@ class VectorScaling(CalibratorFactory):
             log_sum_exp = scipy.special.logsumexp(a=vs_logits, axis=1) 
             try: 
                 exp_vs_logits = np.exp(vs_logits)
-            except:
+            except Warning():
                 print(vs_logits, ws, bs) 
             sum_exp = np.sum(exp_vs_logits, axis=1)
 
