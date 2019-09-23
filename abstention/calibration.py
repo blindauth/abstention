@@ -33,6 +33,12 @@ def softmax(preact, temp, biases):
     return exponents/sum_exponents[:,None]
 
 
+def vector_scaled_softmax(preact, ws, biases):
+    exponents = np.exp(preact*ws[None,:] + biases[None,:])
+    sum_exponents = np.sum(exponents, axis=1)
+    return (exponents/sum_exponents[:,None])
+
+
 #based on https://github.com/gpleiss/temperature_scaling/blob/master/temperature_scaling.py#L78
 def compute_ece_with_bins(softmax_out, labels, bins):
 
@@ -105,8 +111,12 @@ class ConfusionMatrix(CalibratorFactory):
 
 def compute_nll(labels, preacts, t, bs):
     tsb_preacts = preacts/float(t) + bs[None,:]
-    log_sum_exp = scipy.special.logsumexp(a=tsb_preacts, axis=1) 
-    tsb_logits_trueclass = np.sum(tsb_preacts*labels, axis=1)
+    return compute_nll_given_preacts(labels=labels, preacts=tsb_preacts)
+
+
+def compute_nll_given_preacts(labels, preacts):
+    log_sum_exp = scipy.special.logsumexp(a=preacts, axis=1) 
+    tsb_logits_trueclass = np.sum(preacts*labels, axis=1)
     log_likelihoods = tsb_logits_trueclass - log_sum_exp
     nll = -np.mean(log_likelihoods)
     return nll
@@ -241,6 +251,77 @@ def do_tempscale_optimization(labels, preacts, bias_positions, verbose,
         print("Final NLL & grad is: ",final_nll)
 
     return (optimal_t, biases)
+
+
+class VectorScaling(CalibratorFactory):
+
+    def __init__(self, lbfgs_kwargs={}, verbose=False):
+        self.lbfgs_kwargs = lbfgs_kwargs
+        self.verbose = verbose
+
+    def _get_optimal_ws_and_biases(preacts, labels):
+         
+        def eval_func(x):
+            ws = np.array(x[:int(len(x)/2)])
+            bs = np.array(x[int(len(x)/2):]) 
+
+            vs_logits = preacts*ws[None,:] + bs[None,:]
+            log_sum_exp = scipy.special.logsumexp(a=vs_logits, axis=1) 
+            exp_vs_logits = np.exp(vs_preacts)
+            sum_exp = np.sum(exp_vs_logits, axis=1)
+
+            log_likelihoods = (np.sum(vs_logits*labels,axis=1)
+                               - log_sum_exp)
+            nll = -np.mean(log_likelihoods)
+
+            grads_ws = preacts*(labels - (exp_vs_logits/sum_exp[:,None]))
+            grads_b = labels - (exp_vs_logits/sum_exp[:,None])
+
+            #multiply by -1 because we care about *negative* log likelihood
+            mean_grads_ws = -np.mean(grads_ws, axis=0)
+            mean_grads_b = -np.mean(grads_b, axis=0) 
+
+            return nll, np.array(list(mean_grads_ws)+list(mean_grads_b))
+
+        if (self.verbose):
+            original_nll = compute_nll(labels=labels, preacts=preacts,
+                                       t=1.0, bs=np.zeros(labels.shape[1]))
+            print("Original NLL is: ",original_nll)
+            
+        optimization_result = scipy.optimize.minimize(
+                              fun=eval_func,
+                              #fun=lambda x: eval_func(x)[0],
+                              x0=np.array([1.0 for x in preacts.shape[1]]
+                                          +[0.0 for x in preacts.shape[1]]),
+                              bounds=[(0,None) for x in preacts.shape[1]]
+                                      +[(None,None) for x in preacts.shape[1]],
+                              jac=True,
+                              method='L-BFGS-B',
+                              tol=1e-07,
+                              **lbfgs_kwargs)
+        if (self.verbose):
+            print(optimization_result)
+        
+        ws = optimization_result.x[:preacts.shape[1]] 
+        bs = optimization_result.x[preacts.shape[1]:]
+        return ws, bs
+        
+        def __call__(self, valid_preacts, valid_labels,
+                           posterior_supplied=False):
+            if (posterior_supplied):
+                valid_preacts = inverse_softmax(valid_preacts)  
+            assert np.max(np.sum(valid_labels,axis=1)==1.0)
+            
+            (ws, biases) = self._get_optimal_ws_and_biases(
+                                        preacts=valid_preacts,
+                                        labels=valid_labels)
+
+            return (lambda preact: vector_scaled_softmax(
+                                        preact=(inverse_softmax(preact)
+                                                if posterior_supplied else
+                                                preact),
+                                        ws=ws,
+                                        biases=biases))
 
 
 class TempScaling(CalibratorFactory):
