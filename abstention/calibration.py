@@ -298,7 +298,7 @@ class VectorScaling(CalibratorFactory):
                       jac=True,
                       method='L-BFGS-B',
                       tol=1e-07,
-                      **lbfgs_kwargs)
+                      **self.lbfgs_kwargs)
         if (self.verbose):
             print(optimization_result)
         
