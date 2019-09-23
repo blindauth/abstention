@@ -171,6 +171,7 @@ def do_regularized_tempscale_optimization(labels, preacts, beta, verbose,
     if (verbose):
         print("Optimization Result:")
         print(optimization_result)
+    assert optimization_result.success==True, optimization_result
     optimal_t = optimization_result.x[0]
     biases = np.array(optimization_result.x[1:])
     final_nll = compute_nll(labels=labels, preacts=preacts,
@@ -237,6 +238,7 @@ def do_tempscale_optimization(labels, preacts, bias_positions, verbose,
                               **lbfgs_kwargs)
     if (verbose):
         print(optimization_result)
+    assert optimization_result.success==True, optimization_result
     biases = np.zeros(labels.shape[1])
     if (hasattr(optimization_result.x, '__iter__')):
         optimal_t = optimization_result.x[0]
@@ -297,6 +299,7 @@ class NoBiasVectorScaling(CalibratorFactory):
                       **self.lbfgs_kwargs)
         if (self.verbose):
             print(optimization_result)
+        assert optimization_result.success==True, optimization_result
         
         ws = optimization_result.x 
         return ws
@@ -331,10 +334,7 @@ class VectorScaling(CalibratorFactory):
 
             vs_logits = preacts*ws[None,:] + bs[None,:]
             log_sum_exp = scipy.special.logsumexp(a=vs_logits, axis=1) 
-            try: 
-                exp_vs_logits = np.exp(vs_logits)
-            except Warning():
-                print(vs_logits, ws, bs) 
+            exp_vs_logits = np.exp(vs_logits)
             sum_exp = np.sum(exp_vs_logits, axis=1)
 
             log_likelihoods = (np.sum(vs_logits*labels,axis=1)
@@ -368,6 +368,7 @@ class VectorScaling(CalibratorFactory):
                       **self.lbfgs_kwargs)
         if (self.verbose):
             print(optimization_result)
+        assert optimization_result.success==True, optimization_result
         
         ws = optimization_result.x[:preacts.shape[1]] 
         bs = optimization_result.x[preacts.shape[1]:]
