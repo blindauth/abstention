@@ -47,6 +47,6 @@ def get_tied_top_and_worst_methods(ustats_mat, method_names, threshold):
                         if y==topmethod_numtriumphs]
     worst_method_name, worst_method_numtriumphs = sorted_methods_and_numtriumphs[-1]
     #print("worst:",worst_method_name, worst_method_ustats)
-    tied_worst_methods = [x for (x,y) in enumerate(numtriumphs)
+    tied_worst_methods = [x for (x,y) in enumerate(num_triumphs)
                           if y==worst_method_numtriumphs]
     return tied_top_methods, tied_worst_methods
