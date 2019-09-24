@@ -70,7 +70,7 @@ def get_top_method_indices(sorting_metric_vals, ustats_mat, threshold,
             topmethods.append(methodidx)
         else:
             break #don't keep searching down the list
-    if len(topmethods == len(sorting_metric_vals)):
+    if len(topmethods) == len(sorting_metric_vals):
         #if all the methods are tied, set topmethods to an empty list
         topmethods = []
     return topmethods 
