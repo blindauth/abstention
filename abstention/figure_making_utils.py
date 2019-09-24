@@ -34,19 +34,58 @@ def get_ustats_mat(method_to_perfs, method_names, max_ustat=None):
     return to_return
 
 
-def get_tied_top_and_worst_methods(ustats_mat, method_names, threshold):
-    masked_out_ustats = ((ustats_mat > -threshold)*
-                         (ustats_mat < threshold))
-    num_triumphs = np.sum(masked_out_ustats, axis=-1)
-    sorted_methods_and_numtriumphs = sorted(
-        zip(method_names, num_triumphs),
-        key=lambda x: -x[1])
-    top_method_name, topmethod_numtriumphs = sorted_methods_and_numtriumphs[0]
+def get_tied_top_and_worst_methods(ustats_mat, method_names, threshold=11):
+    sorted_methods_and_ustats = sorted(
+        zip(method_names, ustats_mat),
+        key=lambda x: -np.sum(np.sign(x[1]),axis=0))
+    top_method_name, top_method_ustats = sorted_methods_and_ustats[0]
     #print("top:",top_method_name, top_method_ustats)
-    tied_top_methods = [x for x,y in enumerate(num_triumphs)
-                        if y==topmethod_numtriumphs]
-    worst_method_name, worst_method_numtriumphs = sorted_methods_and_numtriumphs[-1]
+    tied_top_methods = [x for (x,y) in enumerate(top_method_ustats)
+                        if (y >= threshold or y <= -threshold)]
+    worst_method_name, worst_method_ustats = sorted_methods_and_ustats[-1]
     #print("worst:",worst_method_name, worst_method_ustats)
-    tied_worst_methods = [x for (x,y) in enumerate(num_triumphs)
-                          if y==worst_method_numtriumphs]
+    tied_worst_methods = [x for (x,y) in enumerate(worst_method_ustats)
+                          if (y <= -threshold or y >= threshold)]
     return tied_top_methods, tied_worst_methods
+
+
+def get_top_method_indices(sorting_metric_vals, ustats_mat, threshold,
+                           largerisbetter):
+    methodranking = [x[0] for x in
+                     sorted(enumerate(sorting_metric_vals),
+                            key=lambda x: (-1 if largerisbetter else 1)*x[1])]
+    ustats_mat = (ustats_mat if largerisbetter else -ustats_mat)
+    topmethods = []
+    for current_rank, methodidx in enumerate(methodranking):
+        tiedwithall = True 
+        for i in range(current_rank):
+            #if method current_rank is significantly worse than method i,
+            # which was sorted before it, then the method at current_rank
+            # cannot be considered to be tied with all the methods before it
+            if (ustats_mat[methodranking[i], methodranking[current_rank]] < 0
+                and  ustats_mat[methodranking[i],
+                                methodranking[current_rank]] >= -threshold):
+                tiedwithall = False
+                break
+        if (tiedwithall):
+            topmethods.append(methodidx)
+    return topmethods
+    
+
+
+#def get_ties_top_and_worst_method(ustats_mat, method_names, threshold):
+#    masked_out_ustats = ((ustats_mat > -threshold)*
+#                         (ustats_mat < threshold))
+#    num_triumphs = np.sum(masked_out_ustats, axis=-1)
+#    sorted_methods_and_numtriumphs = sorted(
+#        zip(method_names, num_triumphs),
+#        key=lambda x: -x[1])
+#    top_method_name, topmethod_numtriumphs = sorted_methods_and_numtriumphs[0]
+#    #print("top:",top_method_name, top_method_ustats)
+#    tied_top_methods = [x for x,y in enumerate(num_triumphs)
+#                        if y==topmethod_numtriumphs]
+#    worst_method_name, worst_method_numtriumphs = sorted_methods_and_numtriumphs[-1]
+#    #print("worst:",worst_method_name, worst_method_ustats)
+#    tied_worst_methods = [x for (x,y) in enumerate(num_triumphs)
+#                          if y==worst_method_numtriumphs]
+#    return tied_top_methods, tied_worst_methods
