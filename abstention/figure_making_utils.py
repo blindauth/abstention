@@ -54,6 +54,9 @@ def get_top_method_indices(sorting_metric_vals, ustats_mat, threshold,
     methodranking = [x[0] for x in
                      sorted(enumerate(sorting_metric_vals),
                             key=lambda x: (-1 if largerisbetter else 1)*x[1])]
+    print("sorting metric vals", sorting_metric_vals)
+    print("methodranking", methodranking)
+    print("ustats_mat", ustats_mat)
     ustats_mat = (ustats_mat if largerisbetter else -ustats_mat)
     topmethods = []
     for current_rank, methodidx in enumerate(methodranking):
