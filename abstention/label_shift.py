@@ -78,11 +78,14 @@ class NoWeightShift(AbstractShiftWeightEstimator):
 
 class EMImbalanceAdapter(AbstractImbalanceAdapter):
 
-    def __init__(self, verbose=False,
+    def __init__(self, estimate_priors_from_valid_labels,
+                       verbose=False,
                        tolerance=1E-6,
                        max_iterations=100,
                        calibrator_factory=None,
                        initialization_weight_ratio=NoWeightShift()):
+        self.estimate_priors_from_valid_labels =\
+            estimate_priors_from_valid_labels
         self.verbose = verbose
         self.tolerance = tolerance
         self.calibrator_factory = calibrator_factory
@@ -90,6 +93,7 @@ class EMImbalanceAdapter(AbstractImbalanceAdapter):
         self.initialization_weight_ratio = initialization_weight_ratio
 
     #valid_labels are only needed if calibration is to be performed
+    # or if self.estimate_priors_from_valid_labels is True
     def __call__(self, tofit_initial_posterior_probs,
                        valid_posterior_probs,
                        valid_labels=None):
@@ -122,10 +126,14 @@ class EMImbalanceAdapter(AbstractImbalanceAdapter):
         tofit_initial_posterior_probs = calibrator_func(
             tofit_initial_posterior_probs)
 
-        #compute the class frequencies based on the posterior probs to ensure
-        # that if the valid posterior probs are supplied for "to fit", then
-        # no shift is estimated
-        valid_class_freq = np.mean(softmax_valid_posterior_probs, axis=0)
+        if (self.estimate_priors_from_valid_labels):
+            valid_class_freq = np.mean(valid_labels, axis=0)
+        else:
+            #compute the class frequencies based on the posterior probs to ensure
+            # that if the valid posterior probs are supplied for "to fit", then
+            # no shift is estimated
+            valid_class_freq = np.mean(softmax_valid_posterior_probs, axis=0)
+
         if (self.verbose):
             print("Original class freq", valid_class_freq)
 
