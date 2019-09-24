@@ -57,20 +57,21 @@ def get_top_method_indices(sorting_metric_vals, ustats_mat, threshold,
     ustats_mat = (ustats_mat if largerisbetter else -ustats_mat)
     topmethods = []
     for current_rank, methodidx in enumerate(methodranking):
-        tiedwithall = True 
-        for i in range(current_rank):
+        noworsethanall = True 
+        for i in range(len(sorting_metric_vals)):
             #if method current_rank is significantly worse than method i,
             # which was sorted before it, then the method at current_rank
-            # cannot be considered to be tied with all the methods before it
+            # cannot be considered among the best methods
             if (ustats_mat[methodranking[i], methodranking[current_rank]] < 0
                 and  ustats_mat[methodranking[i],
                                 methodranking[current_rank]] >= -threshold):
-                tiedwithall = False
+                noworsethanall = False
                 break
-        if (tiedwithall):
+        if (noworsethanall):
             topmethods.append(methodidx)
-    return topmethods
-    
+        else:
+            break #don't keep searching down the list
+    return topmethods 
 
 
 #def get_ties_top_and_worst_method(ustats_mat, method_names, threshold):
