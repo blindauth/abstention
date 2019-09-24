@@ -78,7 +78,7 @@ class NoWeightShift(AbstractShiftWeightEstimator):
 
 class EMImbalanceAdapter(AbstractImbalanceAdapter):
 
-    def __init__(self, estimate_priors_from_valid_labels,
+    def __init__(self, estimate_priors_from_valid_labels=False,
                        verbose=False,
                        tolerance=1E-6,
                        max_iterations=100,
