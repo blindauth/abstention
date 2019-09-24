@@ -54,10 +54,13 @@ def get_top_method_indices(sorting_metric_vals, ustats_mat, threshold,
 
     print("Sorting metric vals", sorting_metric_vals)
     print("Ustats mat", ustats_mat)
+    print("Threshold", threshold)
 
     methodranking = [x[0] for x in
                      sorted(enumerate(sorting_metric_vals),
                             key=lambda x: (-1 if largerisbetter else 1)*x[1])]
+
+    print("Method ranking", methodranking)
 
     ustats_mat = (ustats_mat if largerisbetter else -ustats_mat)
     topmethods = []
@@ -67,9 +70,10 @@ def get_top_method_indices(sorting_metric_vals, ustats_mat, threshold,
             #if method current_rank is significantly worse than method i,
             # which was sorted before it, then the method at current_rank
             # cannot be considered among the best methods
-            if (ustats_mat[methodranking[current_rank],methodranking[i]] < 0
-                and  ustats_mat[methodranking[current_rank],methodranking[i]] >= -threshold):
-                print("Method", current_rank, "is worse than", i, "breaking")
+            ustats_val = ustats_mat[methodranking[current_rank],methodranking[i]]
+            if (ustats_val < 0 and ustats_val >= -threshold):
+                print("Method", current_rank, "is worse than", i, "breaking",
+                      "with ustat", ustats_val)
                 noworsethanall = False
                 break
         if (noworsethanall):
