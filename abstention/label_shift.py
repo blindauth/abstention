@@ -212,6 +212,7 @@ class RLLSImbalanceAdapter(AbstractImbalanceAdapter):
 
     #based on: https://github.com/Angela0428/labelshift/blob/5bbe517938f4e3f5bd14c2c105de973dcc2e0917/label_shift.py#L123
     def compute_w_opt(self, C_yy, mu_y, mu_train_y, rho):
+        import cvxpy as cp
         n = C_yy.shape[0]
         theta = cp.Variable(n)
         b = mu_y - mu_train_y
@@ -230,9 +231,7 @@ class RLLSImbalanceAdapter(AbstractImbalanceAdapter):
 
     def __call__(self, valid_labels, tofit_initial_posterior_probs,
                        valid_posterior_probs):
-
-        import cvxpy as cp
-        
+ 
         if (self.calibrator_factory is not None):
             calibrator_func = self.calibrator_factory(
                 valid_preacts=valid_posterior_probs,
