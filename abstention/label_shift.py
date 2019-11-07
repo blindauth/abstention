@@ -259,9 +259,9 @@ class RLLSImbalanceAdapter(AbstractImbalanceAdapter):
             mu_y = np.mean(hard_tofit_preds, axis=0) 
 
         if (self.soft):
-            mu_y_train = np.mean(valid_posterior_probs, axis=0) 
+            mu_train_y = np.mean(valid_posterior_probs, axis=0) 
         else:
-            mu_y_train = np.mean(hard_valid_preds, axis=0) 
+            mu_train_y = np.mean(hard_valid_preds, axis=0) 
 
         #prepare the "confusion" matrix (confusingly named as confusion
         # matrices are usually normalized, but theirs isn't)
@@ -282,7 +282,7 @@ class RLLSImbalanceAdapter(AbstractImbalanceAdapter):
         weights = self.compute_w_opt(
             C_yy=C_yy,
             mu_y=mu_y,
-            mu_train=mu_train_y,
+            mu_train_y=mu_train_y,
             rho=self.alpha*rho)
          
         return PriorShiftAdapterFunc(
