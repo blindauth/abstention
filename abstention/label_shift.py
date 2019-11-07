@@ -205,7 +205,7 @@ class RLLSImbalanceAdapter(AbstractImbalanceAdapter):
         self.verbose = verbose
 
     #based on: https://github.com/Angela0428/labelshift/blob/5bbe517938f4e3f5bd14c2c105de973dcc2e0917/label_shift.py#L184
-    def compute_3deltaC(n_class, n_train, delta):
+    def compute_3deltaC(self, n_class, n_train, delta):
         rho = 3*(2*np.log(2*n_class/delta)/(3*n_train)
                  + np.sqrt(2*np.log(2*n_class/delta)/n_train))
         return rho 
