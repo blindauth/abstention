@@ -276,7 +276,9 @@ class RLLSImbalanceAdapter(AbstractImbalanceAdapter):
         n_class = C_yy.shape[0]  
         m_train = len(valid_posterior_probs)
         #from https://github.com/Angela0428/labelshift/blob/5bbe517938f4e3f5bd14c2c105de973dcc2e0917/label_shift.py#L453
-        rho = compute_3deltaC(n_class, m_train, 0.05)
+        rho = self.compute_3deltaC(n_class=n_class,
+                                   n_train=m_train,
+                                   delta=0.05)
         weights = self.compute_w_opt(
             C_yy=C_yy,
             mu_y=mu_y,
