@@ -235,7 +235,7 @@ class NegPosteriorDistanceFromThreshold(AbstainerFactory):
     def __init__(self, threshold_finder):
         self.threshold_finder = threshold_finder
 
-    def __call__(self, valid_labels, valid_posterior,
+    def __call__(self, valid_labels=None, valid_posterior=None,
                        valid_uncert=None, train_embeddings=None,
                        train_labels=None):
 
